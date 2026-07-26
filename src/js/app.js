@@ -94,33 +94,25 @@ function showLog(text) {
 }
 
 async function loadTargets() {
-  const targets = await invoke("list_targets");
-  setStatusText(`${targets.length} cleanup targets available`);
-  showLog(
-    "Catalog (" + targets.length + " targets):\n" +
-      targets.map((t) => `  [${t.safety}] ${t.id} — ${t.label}`).join("\n")
-  );
+  await TargetPicker.ensureLoaded();
+  const targetIds = TargetPicker.getSelectedIds();
+  setStatusText(`${targetIds.length} target(s) selected — click "Select Targets…" to change`);
+  showLog(`${targetIds.length} target(s) currently selected for scanning.\nClick "Select Targets…" to review or change.`);
 }
 
 async function startScan() {
+  const targetIds = TargetPicker.getSelectedIds();
+  if (targetIds.length === 0) {
+    showLog('No targets selected. Click "Select Targets…" to choose what to scan.');
+    return;
+  }
+
   scanBtn.disabled = true;
   cancelBtn.disabled = false;
   setScanningIndicator(true);
   setStatusText("Scanning...");
   showLog("Scanning...");
 
-  const targetIds = [
-    "xcode-derived-data",
-    "xcode-ios-device-support",
-    "homebrew-cache",
-    "npm-cache",
-    "cargo-registry-cache",
-    "pip-cache",
-    "go-build-cache",
-    "gradle-caches",
-    "library-logs",
-    "app-caches",
-  ];
   currentScanId = await invoke("start_scan", { targetIds });
 }
 

@@ -1,9 +1,10 @@
 use crate::progress::{spawn_coalescer, ScanProgress};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use sweep_core::model::{Granularity, Safety};
+use sweep_core::model::{Granularity, Safety, ScanTarget};
 use tauri::{AppHandle, Emitter, State};
 
 /// Per-`scan_id` cancellation flags, checked by the scan thread. Kept in
@@ -14,6 +15,16 @@ pub struct ScanRegistry {
     pub cancel_flags: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
+/// User-added scan targets (arbitrary folders picked via the native Open
+/// panel), layered on top of the built-in static catalog rather than mixed
+/// into it — `sweep_core::catalog` stays a pure, fully-tested static list.
+/// Custom targets are always `Safety::ReviewRequired`: an arbitrary
+/// user-picked folder gets no default-selected bulk-delete trust.
+#[derive(Default)]
+pub struct CustomTargets {
+    pub targets: Mutex<Vec<ScanTarget>>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct TargetDto {
     pub id: String,
@@ -22,6 +33,7 @@ pub struct TargetDto {
     pub granularity: Granularity,
     pub blurb: String,
     pub refuse_delete: bool,
+    pub custom: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -34,21 +46,85 @@ fn home_dir() -> std::path::PathBuf {
     std::env::var_os("HOME").map(std::path::PathBuf::from).expect("HOME must be set")
 }
 
-/// Returns the full cleanup target catalog. Pure data, no scanning — safe to
-/// call synchronously from the async command context.
+fn to_dto(t: &ScanTarget, custom: bool) -> TargetDto {
+    TargetDto {
+        id: t.id.to_string(),
+        label: t.label.to_string(),
+        safety: t.safety,
+        granularity: t.granularity,
+        blurb: t.blurb.to_string(),
+        refuse_delete: t.refuse_delete,
+        custom,
+    }
+}
+
+/// Built-in catalog plus every user-added custom target, in that order.
+fn all_targets(custom: &State<'_, CustomTargets>) -> Vec<ScanTarget> {
+    let mut targets = sweep_core::catalog::build_catalog(&home_dir());
+    targets.extend(custom.targets.lock().unwrap().iter().cloned());
+    targets
+}
+
+/// Returns the full cleanup target catalog (built-in + custom). Pure data,
+/// no scanning — safe to call synchronously from the async command context.
 #[tauri::command]
-pub fn list_targets() -> Vec<TargetDto> {
-    sweep_core::catalog::build_catalog(&home_dir())
-        .into_iter()
-        .map(|t| TargetDto {
-            id: t.id.to_string(),
-            label: t.label.to_string(),
-            safety: t.safety,
-            granularity: t.granularity,
-            blurb: t.blurb.to_string(),
-            refuse_delete: t.refuse_delete,
-        })
+pub fn list_targets(custom: State<'_, CustomTargets>) -> Vec<TargetDto> {
+    let custom_ids: std::collections::HashSet<String> =
+        custom.targets.lock().unwrap().iter().map(|t| t.id.to_string()).collect();
+    all_targets(&custom)
+        .iter()
+        .map(|t| to_dto(t, custom_ids.contains(t.id)))
         .collect()
+}
+
+/// Registers a user-picked folder as a new scan target. The folder must
+/// exist and be a directory — this only registers it for scanning; deletion
+/// still goes through the same allowlist/denylist guard as everything else,
+/// and a custom target's own root is its only allowlisted path.
+#[tauri::command]
+pub fn add_custom_target(custom: State<'_, CustomTargets>, path: String) -> Result<TargetDto, String> {
+    let root = PathBuf::from(&path);
+    let canonical = root.canonicalize().map_err(|e| format!("can't access '{path}': {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!("'{path}' is not a directory"));
+    }
+
+    let label = canonical
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+
+    let id = format!("custom-{}", next_custom_id());
+
+    // ScanTarget's id/label/blurb are &'static str by design (the built-in
+    // catalog is fully static data) — leaking is the standard way to turn a
+    // runtime String into one, and is safe here: custom targets live in
+    // managed state for the app's lifetime anyway, so nothing is wasted that
+    // wouldn't already be held for as long as the process runs.
+    let id_static: &'static str = Box::leak(id.into_boxed_str());
+    let label_static: &'static str = Box::leak(label.into_boxed_str());
+
+    let target = ScanTarget {
+        id: id_static,
+        label: label_static,
+        roots: vec![canonical],
+        safety: Safety::ReviewRequired,
+        granularity: Granularity::WholeRoot,
+        blurb: "User-added folder — reviewed individually, never bulk-selected.",
+        refuse_delete: false,
+    };
+
+    let dto = to_dto(&target, true);
+    custom.targets.lock().unwrap().push(target);
+    Ok(dto)
+}
+
+/// Drops a custom target from the catalog entirely (distinct from just
+/// unchecking it for one scan run). Built-in catalog entries can't be
+/// removed this way — only ones this session added.
+#[tauri::command]
+pub fn remove_custom_target(custom: State<'_, CustomTargets>, id: String) {
+    custom.targets.lock().unwrap().retain(|t| t.id != id);
 }
 
 /// Kicks off a scan and returns its `scan_id` immediately — the scan itself
@@ -66,6 +142,7 @@ pub fn list_targets() -> Vec<TargetDto> {
 pub async fn start_scan(
     app: AppHandle,
     registry: State<'_, ScanRegistry>,
+    custom: State<'_, CustomTargets>,
     target_ids: Vec<String>,
 ) -> Result<String, String> {
     let scan_id = format!("scan-{}", uuid_like());
@@ -75,13 +152,11 @@ pub async fn start_scan(
     let progress = ScanProgress::new();
     spawn_coalescer(app.clone(), scan_id.clone(), progress.clone());
 
-    let home = home_dir();
+    let chosen: Vec<ScanTarget> =
+        all_targets(&custom).into_iter().filter(|t| target_ids.contains(&t.id.to_string())).collect();
     let scan_id_for_thread = scan_id.clone();
 
     std::thread::spawn(move || {
-        let catalog = sweep_core::catalog::build_catalog(&home);
-        let chosen: Vec<_> = catalog.into_iter().filter(|t| target_ids.contains(&t.id.to_string())).collect();
-
         // Synthetic progress: ramps up over ~1s so the UI can prove it
         // receives and renders live ticks, independent of how fast the
         // real scan underneath happens to finish.
@@ -113,7 +188,11 @@ pub fn cancel_scan(registry: State<'_, ScanRegistry>, scan_id: String) {
 /// Not a real UUID generator — this app has no need for global uniqueness
 /// guarantees, just a fresh id per scan within one process's lifetime.
 fn uuid_like() -> String {
-    use std::sync::atomic::AtomicU64;
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed).to_string()
+}
+
+fn next_custom_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
