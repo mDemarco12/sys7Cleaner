@@ -111,3 +111,5 @@ The System 7 *interaction design* (title bar chrome, 1-bit dithering, alert dial
 ## Safety model
 
 Deletion always goes through an allowlist-first path guard (`crates/sweep-core/src/safety.rs`): a path is only ever eligible for deletion if it canonicalizes under a registered scan target's root, checked *after* symlink resolution. Files are moved to the Trash by default; permanent deletion is a separate, explicitly gated action. See `crates/sweep-core/src/catalog.rs` for the full list of scan targets and which are safe to bulk-delete, require review, or are refused outright (e.g. Docker's disk image, iCloud Drive, Photos Library).
+
+Copyright © 2026 mDemarco12
