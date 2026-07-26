@@ -1,0 +1,32 @@
+# Rust
+/target
+/src-tauri/target
+**/*.rs.bk
+
+# Tauri build output
+/src-tauri/gen
+*.dmg
+*.app
+/dist
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Secrets / local config
+.env
+.env.local
+*.p12
+*.cer
+*.provisionprofile
+
+# Editors
+.idea/
+*.swp
+
+# Python prototype
+__pycache__/
+*.pyc
+.venv/
