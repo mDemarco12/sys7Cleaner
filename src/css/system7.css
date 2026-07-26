@@ -1,0 +1,328 @@
+/* System 7 chrome. Strictly 1-bit: pure #000 on pure #d8d8d8/#fff, no gray
+   fills, no shadows, no gradients other than the hard-edged pinstripe. */
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: none;
+  user-select: none;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: "Geneva", "ChiKareGo2", sans-serif;
+  font-size: 12px;
+  color: #000;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Classic 1-bit desktop dither: a 2x2 black/white checkerboard tiled at 4px
+   (2x), kept crisp via pixelated rendering rather than a CSS gradient (which
+   would resample/moiré on a Retina backing store). Shows behind both the
+   window inset and the boot splash. */
+body {
+  background-color: #d8d8d8;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23000'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23000'/%3E%3C/svg%3E");
+  background-size: 4px 4px;
+  image-rendering: pixelated;
+}
+
+/* ---------- Boot sequence ----------
+   Mirrors the real Macintosh startup: a plain gray/dithered screen first
+   (the "Happy Mac" gray-screen moment, before anything has loaded), THEN
+   the "Welcome to Macintosh" box fades in on top of it, THEN it fades out
+   and the desktop builds in piece by piece (title bar, then toolbar, then
+   status bar, then content) rather than appearing all at once. This is a
+   one-time cosmetic sequence on load only — once `.booted` lands on <body>,
+   every element behaves exactly as if none of this ever ran. */
+
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  transition: opacity 0.4s ease-out;
+}
+
+.splash-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-box {
+  background: #fff;
+  border: 1px solid #000;
+  padding: 3px;
+  opacity: 0;
+  transition: opacity 0.3s ease-in;
+}
+
+.splash-box.visible {
+  opacity: 1;
+}
+
+.splash-box img {
+  display: block;
+  border: 1px solid #000;
+  max-width: 80vw;
+  max-height: 60vh;
+  width: auto;
+  height: auto;
+}
+
+/* Window sections start hidden/offset and are revealed one at a time by
+   splash.js adding `.revealed` with a staggered delay. Once boot finishes,
+   splash.js strips `boot-section`/`revealed` from every element entirely —
+   these rules never apply again afterward. */
+.boot-section {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.boot-section.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------- Window frame ---------- */
+
+.mac-window {
+  position: absolute;
+  inset: 12px;
+  background: #fff;
+  border: 1px solid #000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- Title bar ---------- */
+
+.title-bar {
+  height: 20px;
+  min-height: 20px;
+  border-bottom: 1px solid #000;
+  background: #d8d8d8;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 6px;
+}
+
+.title-bar[data-tauri-drag-region] {
+  cursor: default;
+}
+
+.title-stripes {
+  flex: 1 1 auto;
+  height: 12px;
+  background-image: repeating-linear-gradient(#000 0, #000 1px, transparent 1px, transparent 3px);
+  visibility: hidden;
+}
+
+.title-bar.active .title-stripes {
+  visibility: visible;
+}
+
+.title-text {
+  flex: 0 0 auto;
+  font-weight: bold;
+  padding: 0 6px;
+  background: #d8d8d8;
+  white-space: nowrap;
+}
+
+.win-box {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #000;
+  background: #d8d8d8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.title-bar:not(.active) .win-box {
+  visibility: hidden;
+}
+
+.win-box:active {
+  background: #000;
+}
+
+.win-box.zoom::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border: 1px solid #000;
+}
+
+.win-box:active.zoom::after {
+  border-color: #d8d8d8;
+}
+
+.win-box.minimize::after {
+  content: "";
+  width: 6px;
+  height: 1px;
+  background: #000;
+}
+
+.win-box:active.minimize::after {
+  background: #d8d8d8;
+}
+
+/* ---------- Content area ---------- */
+
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolbar {
+  border-bottom: 1px solid #000;
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+button.sys7-btn {
+  font-family: inherit;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 3px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+button.sys7-btn:active:not(:disabled) {
+  background: #000;
+  color: #fff;
+}
+
+button.sys7-btn:disabled {
+  color: #888;
+  cursor: default;
+}
+
+/* ---------- Status bar (item count / size / available), matching the
+   classic Finder icon-view header: "N items   X.X MB   Y.Y GB available" */
+
+.status-bar {
+  border-bottom: 1px solid #000;
+  padding: 4px 8px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 22px;
+}
+
+#status-text {
+  white-space: pre;
+}
+
+/* Indeterminate "sweep" progress bar — classic Mac copy-dialog styling:
+   a solid black block traversing a bordered white track. Shown only while
+   a scan is in flight; there is no known total ahead of time to make this
+   determinate. */
+.progress-bar {
+  display: none;
+  flex: 1 1 auto;
+  max-width: 220px;
+  height: 14px;
+  border: 1px solid #000;
+  background: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar.active {
+  display: block;
+}
+
+.progress-bar .sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: repeating-linear-gradient(45deg, #000 0, #000 3px, transparent 3px, transparent 6px);
+  animation: sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0% { left: -30%; }
+  100% { left: 100%; }
+}
+
+/* ---------- Icon grid (file/folder listing with size beneath the label) --- */
+
+.icon-grid {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 84px);
+  grid-auto-rows: 76px;
+  gap: 4px;
+  padding: 10px;
+  align-content: start;
+}
+
+.icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  cursor: pointer;
+  border: 1px dotted transparent;
+}
+
+.icon-item.selected {
+  background: #000;
+  color: #fff;
+}
+
+.icon-item .glyph {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.icon-item .label {
+  font-size: 10px;
+  text-align: center;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-item .size {
+  font-size: 9px;
+  text-align: center;
+  color: #444;
+}
+
+.icon-item.selected .size {
+  color: #ccc;
+}
+
+.log-pane {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 11px;
+}

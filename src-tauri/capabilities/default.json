@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the main window: custom app commands plus the window controls the hand-drawn title bar needs, since decorations are disabled and every button (close/minimize/zoom) is our own chrome.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-focused",
+    "core:window:allow-start-dragging",
+    "core:event:default"
+  ]
+}
