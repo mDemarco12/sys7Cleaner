@@ -1,4 +1,4 @@
-# Macintosh Cleaning Assistant
+# sys7 Cleaning Assistant
 
 A disk-cleanup utility for Apple Silicon Macs with a pixel-accurate Macintosh System 7 interface. Built as a Tauri 2 app: a pure-Rust scanning/cleanup engine (`sweep-core`, no GC, no Tauri dependency) driving a hand-written HTML/CSS/JS frontend — no Node, no bundler.
 
