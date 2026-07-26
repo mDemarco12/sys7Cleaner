@@ -96,14 +96,6 @@ codesign --verify --deep --strict --verbose=2 "/Applications/Macintosh Cleaning 
 
 If `security find-identity -v -p codesigning` comes back empty on a machine you're building on, re-run the five steps above to regenerate and re-trust a certificate — the identity is only as portable as the keychain it's imported into. Builds will still succeed without any identity present (Tauri falls back to ad-hoc signing); you'll just be back to the FDA-reset-on-rebuild annoyance described above.
 
-### Upgrading to a real Developer ID later
-
-To ship this to other people without Gatekeeper warnings:
-
-1. Enroll in the [Apple Developer Program](https://developer.apple.com/programs/) ($99/yr).
-2. Generate a **Developer ID Application** certificate (via Xcode → Settings → Accounts, or the developer portal) and let it install into your keychain.
-3. Change `signingIdentity` in `tauri.conf.json` to that certificate's name (e.g. `"Developer ID Application: Your Name (TEAMID)"`).
-4. Notarize the built app with `xcrun notarytool submit` and staple the ticket with `xcrun stapler staple`.
 
 ## Branding
 
