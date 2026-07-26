@@ -16,6 +16,7 @@ pub fn run() {
             commands::remove_custom_target,
             commands::start_scan,
             commands::cancel_scan,
+            commands::execute_reclaim,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

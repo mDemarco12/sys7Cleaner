@@ -9,6 +9,16 @@ use std::time::{Duration, SystemTime};
 /// may no longer reflect reality (TOCTOU guard).
 const MAX_PLAN_AGE: Duration = Duration::from_secs(5 * 60);
 
+/// What `execute` is allowed to delete for one target: its allowlist roots,
+/// plus whether the exact root itself is a valid deletion target (true for
+/// `Granularity::WholeRoot`, false for `Granularity::Children` — see
+/// `safety::validate_deletion_path` for why this distinction matters).
+#[derive(Debug, Clone)]
+pub struct TargetAllowlist {
+    pub roots: Vec<PathBuf>,
+    pub root_itself_deletable: bool,
+}
+
 /// Execute a reclaim plan against the given `FileOps` implementation.
 ///
 /// This is the ONLY function that mutates the filesystem for deletion, and it
@@ -20,7 +30,7 @@ const MAX_PLAN_AGE: Duration = Duration::from_secs(5 * 60);
 /// though the plan was built from a scan — the plan is not trusted input.
 pub fn execute(
     plan: &ReclaimPlan,
-    allowlist_by_target: &std::collections::HashMap<String, Vec<PathBuf>>,
+    allowlist_by_target: &std::collections::HashMap<String, TargetAllowlist>,
     home: &std::path::Path,
     ops: &dyn FileOps,
 ) -> ReclaimOutcome {
@@ -37,12 +47,12 @@ pub fn execute(
     }
 
     for item in &plan.items {
-        let Some(roots) = allowlist_by_target.get(&item.target_id) else {
+        let Some(allow) = allowlist_by_target.get(&item.target_id) else {
             outcome.failed.push((item.path.clone(), "unknown target_id, not in allowlist".into()));
             continue;
         };
 
-        let validated = match validate_deletion_path(&item.path, roots, home) {
+        let validated = match validate_deletion_path(&item.path, &allow.roots, home, allow.root_itself_deletable) {
             Ok(p) => p,
             Err(SafetyViolation::Unresolvable(_)) => {
                 // Already gone, or moved — treat as stale rather than an error.
@@ -125,7 +135,7 @@ mod tests {
             created_at: SystemTime::now(),
         };
         let mut allowlist = HashMap::new();
-        allowlist.insert("app-caches".to_string(), vec![root.clone()]);
+        allowlist.insert("app-caches".to_string(), TargetAllowlist { roots: vec![root.clone()], root_itself_deletable: false });
 
         let ops = RecordingFileOps::new();
         let outcome = execute(&plan, &allowlist, home.path(), &ops);
@@ -150,7 +160,7 @@ mod tests {
             created_at: SystemTime::now(),
         };
         let mut allowlist = HashMap::new();
-        allowlist.insert("app-caches".to_string(), vec![root]);
+        allowlist.insert("app-caches".to_string(), TargetAllowlist { roots: vec![root], root_itself_deletable: false });
 
         let ops = RecordingFileOps::new();
         let outcome = execute(&plan, &allowlist, home.path(), &ops);
@@ -174,7 +184,7 @@ mod tests {
             created_at: old_time,
         };
         let mut allowlist = HashMap::new();
-        allowlist.insert("app-caches".to_string(), vec![root]);
+        allowlist.insert("app-caches".to_string(), TargetAllowlist { roots: vec![root], root_itself_deletable: false });
 
         let ops = RecordingFileOps::new();
         let outcome = execute(&plan, &allowlist, home.path(), &ops);
@@ -202,7 +212,7 @@ mod tests {
             created_at: SystemTime::now(),
         };
         let mut allowlist = HashMap::new();
-        allowlist.insert("app-caches".to_string(), vec![root]);
+        allowlist.insert("app-caches".to_string(), TargetAllowlist { roots: vec![root], root_itself_deletable: false });
 
         let ops = RecordingFileOps::new();
         let outcome = execute(&plan, &allowlist, home.path(), &ops);
@@ -226,7 +236,7 @@ mod tests {
             created_at: SystemTime::now(),
         };
         let mut allowlist = HashMap::new();
-        allowlist.insert("app-caches".to_string(), vec![root]);
+        allowlist.insert("app-caches".to_string(), TargetAllowlist { roots: vec![root], root_itself_deletable: false });
 
         let ops = RecordingFileOps::new();
         let outcome = execute(&plan, &allowlist, home.path(), &ops);
@@ -235,5 +245,34 @@ mod tests {
         // ...but the global kill switch forces trash instead of permanent removal.
         assert!(outcome.removed_permanently.is_empty());
         assert_eq!(outcome.trashed.len(), 1);
+    }
+
+    #[test]
+    fn whole_root_target_can_trash_its_own_root() {
+        // Regression test: a WholeRoot target (e.g. a custom-added folder)
+        // has its own root as the single deletable unit. Before
+        // root_itself_deletable existed, this was wrongly refused as
+        // "too shallow" — the same rule that correctly protects a
+        // Children-granularity container root (like ~/Library/Caches
+        // itself) was also blocking WholeRoot targets it was never meant to
+        // apply to.
+        let home = tempdir().unwrap();
+        let root = home.path().join("Desktop/SweepTest");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("junk.bin"), vec![0u8; 1024]).unwrap();
+
+        let plan = ReclaimPlan {
+            items: vec![plan_item_for("custom-1", &root)],
+            permanent: false,
+            created_at: SystemTime::now(),
+        };
+        let mut allowlist = HashMap::new();
+        allowlist.insert("custom-1".to_string(), TargetAllowlist { roots: vec![root.clone()], root_itself_deletable: true });
+
+        let ops = RecordingFileOps::new();
+        let outcome = execute(&plan, &allowlist, home.path(), &ops);
+
+        assert_eq!(outcome.trashed, vec![root.canonicalize().unwrap()]);
+        assert!(outcome.failed.is_empty());
     }
 }

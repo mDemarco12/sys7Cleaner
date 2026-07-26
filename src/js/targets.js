@@ -10,6 +10,7 @@ const TargetPicker = (() => {
   const targetsBtn = document.getElementById("targets-btn");
   const doneBtn = document.getElementById("targets-done-btn");
   const addFolderBtn = document.getElementById("add-folder-btn");
+  const deselectAllBtn = document.getElementById("deselect-all-btn");
 
   const TIER_ORDER = ["Regenerable", "ReviewRequired", "NeverTouch"];
   const TIER_LABEL = {
@@ -108,9 +109,15 @@ const TargetPicker = (() => {
     modal.style.display = "none";
   }
 
+  function deselectAll() {
+    selected.clear();
+    render();
+  }
+
   targetsBtn.addEventListener("click", open_);
   doneBtn.addEventListener("click", close);
   addFolderBtn.addEventListener("click", addFolder);
+  deselectAllBtn.addEventListener("click", deselectAll);
 
   return {
     getSelectedIds: () => Array.from(selected),

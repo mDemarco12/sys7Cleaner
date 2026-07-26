@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
-use sweep_core::model::{Granularity, PlanItem, ReclaimPlan, ScanTarget};
+use sweep_core::model::{PlanItem, ReclaimPlan, ScanTarget};
 
 #[derive(Parser)]
 #[command(name = "sweep", about = "Headless engine CLI for the System 7 disk cleanup app")]
@@ -85,53 +85,16 @@ fn main() {
             }
 
             let cancel = AtomicBool::new(false);
-            let summary = sweep_core::run_scan(&chosen, &cancel);
-
             let mut items = Vec::new();
-            for (target, result) in chosen.iter().zip(summary.results.iter()) {
-                match target.granularity {
-                    Granularity::WholeRoot => {
-                        for root in &target.roots {
-                            if let Ok(meta) = std::fs::metadata(root) {
-                                use std::os::unix::fs::MetadataExt;
-                                items.push(PlanItem {
-                                    target_id: target.id.to_string(),
-                                    path: root.clone(),
-                                    expected_disk_bytes: result.disk_bytes,
-                                    expected_dev: meta.dev(),
-                                    expected_ino: meta.ino(),
-                                });
-                            }
-                        }
-                    }
-                    Granularity::Children | Granularity::Files => {
-                        for root in &target.roots {
-                            let Ok(read) = std::fs::read_dir(root) else { continue };
-                            for child in read.flatten() {
-                                let path = child.path();
-                                let Ok(meta) = std::fs::metadata(&path) else { continue };
-                                use std::os::unix::fs::MetadataExt;
-                                // A directory's own metadata only reflects its
-                                // inode's block usage, not its recursive
-                                // contents — re-walk each child to get the
-                                // real reclaimable size shown to the user.
-                                let disk_bytes = if meta.is_dir() {
-                                    let child_cancel = AtomicBool::new(false);
-                                    sweep_core::walk::size_tree(&path, &child_cancel, &sweep_core::walk::WalkLimits::default())
-                                        .disk_bytes
-                                } else {
-                                    (meta.blocks() as u64) * 512
-                                };
-                                items.push(PlanItem {
-                                    target_id: target.id.to_string(),
-                                    path,
-                                    expected_disk_bytes: disk_bytes,
-                                    expected_dev: meta.dev(),
-                                    expected_ino: meta.ino(),
-                                });
-                            }
-                        }
-                    }
+            for target in &chosen {
+                for folder in sweep_core::planning::folder_breakdown(target, &cancel) {
+                    items.push(PlanItem {
+                        target_id: target.id.to_string(),
+                        path: folder.path,
+                        expected_disk_bytes: folder.disk_bytes,
+                        expected_dev: folder.dev,
+                        expected_ino: folder.ino,
+                    });
                 }
             }
 
@@ -149,7 +112,7 @@ fn main() {
                 }
             };
             let plan: ReclaimPlan = serde_json::from_str(&plan_json).expect("invalid plan JSON");
-            let allowlist: HashMap<String, Vec<PathBuf>> = sweep_core::allowlist_map(&catalog);
+            let allowlist: HashMap<String, sweep_core::reclaim::TargetAllowlist> = sweep_core::allowlist_map(&catalog);
 
             if dry_run {
                 let ops = sweep_core::fsops::DryRunFileOps::new();

@@ -1,7 +1,7 @@
-// Classic Macintosh boot sequence, cosmetic and one-time only:
+// Classic Macintosh-style boot sequence, cosmetic and one-time only:
 //   1. Plain gray dithered screen (the "gray screen" moment before anything
 //      has loaded — no window, no image).
-//   2. The "Welcome to Macintosh" box fades in on top of that gray screen.
+//   2. The "Welcome to sys7 Cleaner." box fades in on top of that gray screen.
 //   3. It fades out, and the main window's sections build in one at a time
 //      (title bar, then toolbar, then status bar, then content) instead of
 //      snapping in all at once — mirroring how the real desktop drew in
@@ -19,6 +19,8 @@
   const splash = document.getElementById("splash");
   const splashBox = splash.querySelector(".splash-box");
   const sections = Array.from(document.querySelectorAll(".boot-section"));
+
+  document.getElementById("splash-logo").src = SYS7_EMBLEM_SVG;
 
   function revealSectionsThenFinish() {
     sections.forEach((el, i) => {

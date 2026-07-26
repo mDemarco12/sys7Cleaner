@@ -59,10 +59,23 @@ fn is_denylist_exception(canonical: &Path) -> bool {
 /// Order matters: allowlist membership is checked BEFORE the denylist, and
 /// resolution (`canonicalize`) happens BEFORE any comparison. Checking a
 /// path before resolving it means a symlink can defeat every rule below.
+///
+/// `root_itself_deletable` controls whether the exact allowlist root may be
+/// the deletion target, not just something under it. This must be `false`
+/// for `Granularity::Children` targets, where the root is a shared container
+/// (e.g. `~/Library/Caches`) that must never itself be deleted — only its
+/// children are meant to be deletable units. It should be `true` for
+/// `Granularity::WholeRoot` targets, where the root IS the single deletable
+/// unit by design (e.g. a custom-added folder, or `~/Library/Caches/Homebrew`)
+/// — refusing to delete it there would defeat the whole point of that
+/// granularity. Either way, the denylist check above still applies
+/// regardless of this flag, so it can never be used to bypass a protected
+/// system location.
 pub fn validate_deletion_path(
     candidate: &Path,
     allowlist_roots: &[PathBuf],
     home: &Path,
+    root_itself_deletable: bool,
 ) -> Result<PathBuf, SafetyViolation> {
     let canonical = candidate
         .canonicalize()
@@ -96,9 +109,9 @@ pub fn validate_deletion_path(
         }
     }
 
-    // Refuse deleting the allowlist root itself, or an immediate child of `/`-like
-    // shallow roots — depth here is relative to the matched root, not absolute.
-    if canonical == matched_root {
+    // Refuse deleting the allowlist root itself, UNLESS this target's
+    // granularity says the root itself is the intended deletable unit.
+    if canonical == matched_root && !root_itself_deletable {
         return Err(SafetyViolation::TooShallow);
     }
 
@@ -153,7 +166,7 @@ mod tests {
         let target = root.join("MyApp-abc123");
         fs::create_dir(&target).unwrap();
 
-        let result = validate_deletion_path(&target, &roots_for(&root), home.path());
+        let result = validate_deletion_path(&target, &roots_for(&root), home.path(), false);
         assert!(result.is_ok(), "{:?}", result);
     }
 
@@ -165,18 +178,43 @@ mod tests {
         let outside = home.path().join("Documents");
         fs::create_dir_all(&outside).unwrap();
 
-        let result = validate_deletion_path(&outside, &roots_for(&root), home.path());
+        let result = validate_deletion_path(&outside, &roots_for(&root), home.path(), false);
         assert_eq!(result, Err(SafetyViolation::NotUnderAllowlist));
     }
 
     #[test]
-    fn rejects_the_allowlist_root_itself() {
+    fn rejects_the_allowlist_root_itself_for_children_granularity() {
         let home = tempdir().unwrap();
         let root = home.path().join("Library/Caches");
         fs::create_dir_all(&root).unwrap();
 
-        let result = validate_deletion_path(&root, &roots_for(&root), home.path());
+        let result = validate_deletion_path(&root, &roots_for(&root), home.path(), false);
         assert_eq!(result, Err(SafetyViolation::TooShallow));
+    }
+
+    #[test]
+    fn accepts_the_allowlist_root_itself_for_whole_root_granularity() {
+        let home = tempdir().unwrap();
+        // A custom-added folder, or a WholeRoot target like Homebrew's cache:
+        // the root IS the single deletable unit, so deleting it exactly must
+        // succeed rather than being refused as "too shallow".
+        let root = home.path().join("Desktop/SweepTest");
+        fs::create_dir_all(&root).unwrap();
+
+        let result = validate_deletion_path(&root, &roots_for(&root), home.path(), true);
+        assert!(result.is_ok(), "{:?}", result);
+    }
+
+    #[test]
+    fn denylist_still_applies_even_when_root_itself_deletable() {
+        let home = tempdir().unwrap();
+        // Even if some bug made $HOME/Library a WholeRoot target's root,
+        // root_itself_deletable=true must NOT let the denylist be bypassed.
+        let library = home.path().join("Library");
+        fs::create_dir_all(&library).unwrap();
+
+        let result = validate_deletion_path(&library, &roots_for(&library), home.path(), true);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -188,7 +226,7 @@ mod tests {
         fs::create_dir_all(home.path().join("Documents")).unwrap();
 
         // canonicalize() resolves the .. before any comparison happens.
-        let result = validate_deletion_path(&escape, &roots_for(&root), home.path());
+        let result = validate_deletion_path(&escape, &roots_for(&root), home.path(), false);
         assert_eq!(result, Err(SafetyViolation::NotUnderAllowlist));
     }
 
@@ -203,7 +241,7 @@ mod tests {
         let link = root.join("escape-link");
         std::os::unix::fs::symlink(&sensitive, &link).unwrap();
 
-        let result = validate_deletion_path(&link, &roots_for(&root), home.path());
+        let result = validate_deletion_path(&link, &roots_for(&root), home.path(), false);
         assert_eq!(result, Err(SafetyViolation::NotUnderAllowlist));
     }
 
@@ -213,16 +251,17 @@ mod tests {
         let icloud = home.path().join("Library/Mobile Documents");
         fs::create_dir_all(&icloud).unwrap();
 
-        // Pretend a bug registered iCloud Drive itself as an allowlist root;
-        // it must still be rejected (as the root itself, or via denylist).
-        let result = validate_deletion_path(&icloud, &roots_for(&icloud), home.path());
+        // Pretend a bug registered iCloud Drive itself as an allowlist root,
+        // even with root_itself_deletable=true; it must still be rejected
+        // via the denylist.
+        let result = validate_deletion_path(&icloud, &roots_for(&icloud), home.path(), true);
         assert!(result.is_err());
     }
 
     #[test]
     fn rejects_home_directory_exactly() {
         let home = tempdir().unwrap();
-        let result = validate_deletion_path(home.path(), &roots_for(home.path()), home.path());
+        let result = validate_deletion_path(home.path(), &roots_for(home.path()), home.path(), true);
         assert!(result.is_err());
     }
 
@@ -233,7 +272,7 @@ mod tests {
         fs::create_dir_all(&ssh).unwrap();
         // Even if a target's root were misconfigured to include .ssh's parent,
         // the exact .ssh path must be denylisted.
-        let result = validate_deletion_path(&ssh, &roots_for(home.path()), home.path());
+        let result = validate_deletion_path(&ssh, &roots_for(home.path()), home.path(), false);
         assert!(result.is_err());
     }
 }

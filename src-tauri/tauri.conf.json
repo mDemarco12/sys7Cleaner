@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Macintosh HD Cleanup Utility",
+        "title": "sys7 HD Cleanup Utility",
         "width": 640,
         "height": 480,
         "resizable": true,

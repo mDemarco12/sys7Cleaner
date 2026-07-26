@@ -47,6 +47,22 @@ pub struct Entry {
     pub ino: u64,
 }
 
+/// One deletable unit within a target: either the target's whole root
+/// (`Granularity::WholeRoot`) or one immediate child of it
+/// (`Granularity::Children`). This is the folder-level grouping shown at the
+/// top of the results browser — `Entry` values (individual files) are only
+/// surfaced one level down, after the user drills into a specific folder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FolderSummary {
+    pub path: PathBuf,
+    pub label: String,
+    pub disk_bytes: u64,
+    pub file_count: u64,
+    pub is_dir: bool,
+    pub dev: u64,
+    pub ino: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetResult {
     pub id: String,
@@ -54,6 +70,11 @@ pub struct TargetResult {
     pub apparent_bytes: u64,
     pub disk_bytes: u64,
     pub file_count: u64,
+    /// Folder-level breakdown (one per deletable unit) — what the results
+    /// browser groups by at the top level.
+    pub folders: Vec<FolderSummary>,
+    /// Largest individual files across the whole target, capped. Used only
+    /// for the drill-down view, filtered by path prefix to one folder.
     pub entries: Vec<Entry>,
     pub truncated: bool,
     pub denied: Vec<PathBuf>,
@@ -68,6 +89,7 @@ impl TargetResult {
             apparent_bytes: 0,
             disk_bytes: 0,
             file_count: 0,
+            folders: Vec::new(),
             entries: Vec::new(),
             truncated: false,
             denied: Vec::new(),

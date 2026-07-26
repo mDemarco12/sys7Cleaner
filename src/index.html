@@ -2,14 +2,15 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Macintosh Cleaning Assistant</title>
+<title>sys7 HD Cleanup Utility</title>
 <link rel="stylesheet" href="css/system7.css">
 </head>
 <body>
 
 <div id="splash" class="splash-overlay">
   <div class="splash-box">
-    <img src="img/welcome.png" alt="Welcome to Macintosh">
+    <img id="splash-logo" class="splash-logo" src="" alt="">
+    <div class="splash-text">Welcome to sys7 Cleaner.</div>
   </div>
 </div>
 
@@ -17,7 +18,7 @@
   <div class="title-bar active boot-section" data-tauri-drag-region>
     <div class="win-box close"></div>
     <div class="title-stripes"></div>
-    <div class="title-text">Macintosh HD Cleanup Utility</div>
+    <div class="title-text">sys7 HD Cleanup Utility</div>
     <div class="title-stripes"></div>
     <div class="win-box minimize"></div>
     <div class="win-box zoom"></div>
@@ -25,11 +26,12 @@
 
   <div class="content">
     <div class="toolbar boot-section">
-      <button id="scan-btn" class="sys7-btn">Scan Macintosh</button>
+      <button id="scan-btn" class="sys7-btn">Scan</button>
       <button id="cancel-btn" class="sys7-btn" disabled>Cancel</button>
       <button id="targets-btn" class="sys7-btn">Select Targets…</button>
+      <button id="delete-btn" class="sys7-btn" disabled>Delete Selected</button>
       <div style="flex:1 1 auto"></div>
-      <button id="about-btn" class="sys7-btn">About this Application</button>
+      <button id="about-btn" class="sys7-btn">About</button>
     </div>
 
     <div id="status-bar" class="status-bar boot-section">
@@ -56,8 +58,22 @@
     </div>
     <div class="modal-footer">
       <button id="add-folder-btn" class="sys7-btn">Add Folder…</button>
+      <button id="deselect-all-btn" class="sys7-btn">Deselect All</button>
       <div style="flex:1 1 auto"></div>
       <button id="targets-done-btn" class="sys7-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<div id="alert-overlay" class="alert-overlay" style="display:none">
+  <div class="alert-box">
+    <img id="alert-icon" class="alert-icon" src="" alt="">
+    <div id="alert-body" class="alert-body"></div>
+    <div class="alert-buttons">
+      <button id="alert-affirmative-btn" class="alert-btn"></button>
+      <div class="alert-btn-ring">
+        <button id="alert-cancel-btn" class="alert-btn">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -66,7 +82,7 @@
   <div class="modal-window about-window">
     <div class="title-bar active">
       <div class="title-stripes"></div>
-      <div class="title-text">About This Application</div>
+      <div class="title-text">About</div>
       <div class="title-stripes"></div>
     </div>
     <div class="modal-body">
@@ -86,6 +102,7 @@
 <script src="js/icons.js"></script>
 <script src="js/splash.js"></script>
 <script src="js/chrome.js"></script>
+<script src="js/alert.js"></script>
 <script src="js/targets.js"></script>
 <script src="js/about.js"></script>
 <script src="js/app.js"></script>

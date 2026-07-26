@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use sweep_core::model::{Granularity, Safety, ScanTarget};
+use sweep_core::model::{Granularity, ReclaimOutcome, ReclaimPlan, Safety, ScanTarget};
 use tauri::{AppHandle, Emitter, State};
 
 /// Per-`scan_id` cancellation flags, checked by the scan thread. Kept in
@@ -183,6 +183,23 @@ pub fn cancel_scan(registry: State<'_, ScanRegistry>, scan_id: String) {
     if let Some(flag) = registry.cancel_flags.lock().unwrap().get(&scan_id) {
         flag.store(true, Ordering::Relaxed);
     }
+}
+
+/// Executes a reclaim plan built by the frontend from the user's current
+/// selection. This is the only path that actually deletes anything — the
+/// plan is re-validated here from scratch (allowlist membership per target,
+/// staleness, TOCTOU) rather than trusted as-is; the frontend cannot bypass
+/// any of `reclaim::execute`'s checks just by sending a well-formed plan.
+/// Always moves to the Trash: this app never wires up permanent deletion
+/// from the UI, regardless of what a plan's `permanent` field claims.
+#[tauri::command]
+pub fn execute_reclaim(custom: State<'_, CustomTargets>, mut plan: ReclaimPlan) -> ReclaimOutcome {
+    plan.permanent = false;
+
+    let home = home_dir();
+    let allowlist = sweep_core::allowlist_map(&all_targets(&custom));
+    let ops = sweep_core::fsops::RealFileOps;
+    sweep_core::reclaim::execute(&plan, &allowlist, &home, &ops)
 }
 
 /// Not a real UUID generator — this app has no need for global uniqueness

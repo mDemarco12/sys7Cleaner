@@ -105,6 +105,17 @@ To ship this to other people without Gatekeeper warnings:
 3. Change `signingIdentity` in `tauri.conf.json` to that certificate's name (e.g. `"Developer ID Application: Your Name (TEAMID)"`).
 4. Notarize the built app with `xcrun notarytool submit` and staple the ticket with `xcrun stapler staple`.
 
+## Branding
+
+The boot splash and a few UI strings were deliberately de-branded from Apple's actual "Welcome to Macintosh" boot screen to avoid using Apple-owned artwork/copy:
+
+- The splash no longer ships a raster screenshot of the real boot screen (which embedded Apple's own small Mac/rainbow-Apple icon). It's now built entirely from HTML/CSS markup — a white bordered dialog box, matching the same visual language as the confirmation alert — with an **original** angular dark-red emblem (`SYS7_EMBLEM_SVG` in `src/js/icons.js`) in place of any OS-vendor logo. That emblem is deliberately its own geometry, not a recreation of any existing insignia (real or fictional) — copying a *different* copyrighted/trademarked logo in place of Apple's wouldn't reduce infringement risk, it would just move it to someone else's IP.
+- Splash text: "Welcome to sys7 Cleaner." (was "Welcome to Macintosh.")
+- Toolbar button: "Scan" (was "Scan Macintosh")
+- Window title: "sys7 HD Cleanup Utility" (was "Macintosh HD Cleanup Utility")
+
+The System 7 *interaction design* (title bar chrome, 1-bit dithering, alert dialog layout) is a UI paradigm, not Apple-owned artwork, and isn't affected by this — only actual Apple assets/copy were replaced.
+
 ## Safety model
 
 Deletion always goes through an allowlist-first path guard (`crates/sweep-core/src/safety.rs`): a path is only ever eligible for deletion if it canonicalizes under a registered scan target's root, checked *after* symlink resolution. Files are moved to the Trash by default; permanent deletion is a separate, explicitly gated action. See `crates/sweep-core/src/catalog.rs` for the full list of scan targets and which are safe to bulk-delete, require review, or are refused outright (e.g. Docker's disk image, iCloud Drive, Photos Library).
