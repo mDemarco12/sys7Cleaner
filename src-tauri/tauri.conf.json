@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Macintosh Cleaning Assistant",
+  "productName": "sys7 Cleaner",
   "version": "0.1.0",
   "identifier": "com.mdemarco12.sys7cleaner",
   "build": {
@@ -33,7 +33,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Mac Cleaning Assistant Dev"
+      "signingIdentity": "sys7 Cleaner Dev"
     }
   }
 }

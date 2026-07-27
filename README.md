@@ -1,4 +1,4 @@
-# sys7 Cleaning Assistant
+# sys7 Cleaner
 
 A disk-cleanup utility for Apple Silicon Macs with a pixel-accurate Macintosh System 7 interface. Built as a Tauri 2 app: a pure-Rust scanning/cleanup engine (`sweep-core`, no GC, no Tauri dependency) driving a hand-written HTML/CSS/JS frontend — no Node, no bundler.
 
@@ -21,10 +21,10 @@ cargo tauri dev              # run in development, live window
 cargo tauri build             # release build + .app/.dmg bundle
 ```
 
-The release build produces `src-tauri/target/release/bundle/macos/Macintosh Cleaning Assistant.app`. Copy it to `/Applications` to make it discoverable in Launchpad/Spotlight:
+The release build produces `src-tauri/target/release/bundle/macos/sys7 Cleaner.app`. Copy it to `/Applications` to make it discoverable in Launchpad/Spotlight:
 
 ```bash
-cp -R "target/release/bundle/macos/Macintosh Cleaning Assistant.app" /Applications/
+cp -R "target/release/bundle/macos/sys7 Cleaner.app" /Applications/
 ```
 
 ## Code signing (self-signed, local-only)
@@ -42,7 +42,7 @@ It does **not**:
 ```bash
 # 1. Generate a self-signed cert with the Code Signing extended key usage.
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
-  -subj "/CN=Mac Cleaning Assistant Dev" \
+  -subj "/CN=sys7 Cleaner Dev" \
   -addext "keyUsage=critical,digitalSignature" \
   -addext "extendedKeyUsage=critical,codeSigning" \
   -addext "basicConstraints=critical,CA:FALSE"
@@ -68,7 +68,7 @@ Verify it's available:
 
 ```bash
 security find-identity -v -p codesigning
-#   1) <fingerprint> "Mac Cleaning Assistant Dev"
+#   1) <fingerprint> "sys7 Cleaner Dev"
 #      1 valid identities found
 ```
 
@@ -79,7 +79,7 @@ security find-identity -v -p codesigning
 ```json
 "bundle": {
   "macOS": {
-    "signingIdentity": "Mac Cleaning Assistant Dev"
+    "signingIdentity": "sys7 Cleaner Dev"
   }
 }
 ```
@@ -87,9 +87,9 @@ security find-identity -v -p codesigning
 `cargo tauri build` (and `cargo tauri dev`) picks this up automatically and signs with that identity — no manual `codesign` step needed. If you ever need to sign a bundle by hand:
 
 ```bash
-codesign --force --deep --sign "Mac Cleaning Assistant Dev" --options runtime \
-  "/Applications/Macintosh Cleaning Assistant.app"
-codesign --verify --deep --strict --verbose=2 "/Applications/Macintosh Cleaning Assistant.app"
+codesign --force --deep --sign "sys7 Cleaner Dev" --options runtime \
+  "/Applications/sys7 Cleaner.app"
+codesign --verify --deep --strict --verbose=2 "/Applications/sys7 Cleaner.app"
 ```
 
 ### Setting this up on a fresh machine / after a keychain wipe

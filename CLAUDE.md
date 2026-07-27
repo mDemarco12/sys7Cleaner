@@ -1,4 +1,4 @@
-# Macintosh Cleaning Assistant — Project Map
+# sys7 Cleaner — Project Map
 
 Read this before touching code. It exists so a feature request can be routed to the 2-3 relevant files instead of re-reading the whole tree. Sections are ordered by system; each names the files, what they own, and the invariants that matter if you change them.
 
@@ -39,7 +39,7 @@ The IPC layer. Thin — business logic belongs in `sweep-core`, not here.
 | `progress.rs` | `ScanProgress` (atomic counters) + `spawn_coalescer()` — emits `scan://progress` at ≤20/sec (50ms tick), never one event per file. **Note:** progress numbers are currently synthetic/simulated (ramps over ~1s); only `scan://done`'s `ScanSummary` payload is real. Wiring real per-directory progress into `walk.rs` is still open. |
 | `lib.rs` | Registers plugins (`tauri-plugin-dialog` for folder picking, `tauri-plugin-opener` for external links) and all commands. |
 | `capabilities/default.json` | ACL grants for window controls (close/minimize/toggle-maximize — required since `decorations:false` means the hand-drawn title bar owns these), dialog, opener, event. **Custom `#[tauri::command]` functions are NOT gated by this file** — only built-in Tauri/plugin commands are. |
-| `tauri.conf.json` | `frontendDist: "../src"`, no `beforeDevCommand`/Node. `bundle.macOS.signingIdentity: "Mac Cleaning Assistant Dev"` (self-signed, local-only — see README's Code Signing section). Window `title` and `decorations:false`. |
+| `tauri.conf.json` | `frontendDist: "../src"`, no `beforeDevCommand`/Node. `bundle.macOS.signingIdentity: "sys7 Cleaner Dev"` (self-signed, local-only — see README's Code Signing section). Window `title` and `decorations:false`. |
 
 ## System 4: Frontend (`src/`) — static, no build step, no Node
 
