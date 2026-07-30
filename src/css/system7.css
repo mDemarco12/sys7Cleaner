@@ -306,6 +306,10 @@ button.sys7-btn:disabled {
   color: #fff;
 }
 
+.icon-item.readonly {
+  cursor: default;
+}
+
 .icon-item .glyph {
   width: 32px;
   height: 32px;

@@ -22,6 +22,11 @@ const TargetPicker = (() => {
   let targets = [];
   let selected = new Set();
   let loaded = false;
+  let onChangeCallback = null;
+
+  function notifyChange() {
+    if (onChangeCallback) onChangeCallback();
+  }
 
   function defaultSelection() {
     selected = new Set(targets.filter((t) => t.safety === "Regenerable").map((t) => t.id));
@@ -48,6 +53,7 @@ const TargetPicker = (() => {
         checkbox.addEventListener("change", () => {
           if (checkbox.checked) selected.add(t.id);
           else selected.delete(t.id);
+          notifyChange();
         });
 
         const labelWrap = document.createElement("div");
@@ -69,6 +75,7 @@ const TargetPicker = (() => {
             await invoke("remove_custom_target", { id: t.id });
             selected.delete(t.id);
             await load(true);
+            notifyChange();
           });
           row.appendChild(removeBtn);
         }
@@ -94,6 +101,7 @@ const TargetPicker = (() => {
       const dto = await invoke("add_custom_target", { path: picked });
       selected.add(dto.id);
       await load(true);
+      notifyChange();
     } catch (err) {
       alert(`Couldn't add that folder: ${err}`);
     }
@@ -112,6 +120,7 @@ const TargetPicker = (() => {
   function deselectAll() {
     selected.clear();
     render();
+    notifyChange();
   }
 
   targetsBtn.addEventListener("click", open_);
@@ -121,6 +130,10 @@ const TargetPicker = (() => {
 
   return {
     getSelectedIds: () => Array.from(selected),
+    getSelectedTargets: () => targets.filter((t) => selected.has(t.id)),
     ensureLoaded: () => load(false),
+    onChange: (cb) => {
+      onChangeCallback = cb;
+    },
   };
 })();

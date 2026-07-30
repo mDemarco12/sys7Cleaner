@@ -222,11 +222,48 @@ function showLog(text) {
   deleteBtn.disabled = true;
 }
 
+// Idle main-menu view: an icon per currently-selected scan target, kept live
+// via TargetPicker.onChange. Never runs once a real scan has produced
+// results (lastSummary set) — that view must not be clobbered by selection
+// changes made afterward via the modal.
+function renderIdleTargetSummary() {
+  if (lastSummary) return;
+
+  const selectedTargets = TargetPicker.getSelectedTargets();
+  const n = selectedTargets.length;
+  setStatusText(`${n} target(s) selected — click "Select Targets…" to change`);
+
+  if (n === 0) {
+    showLog('No targets selected. Click "Select Targets…" to choose what to scan.');
+    return;
+  }
+
+  iconGrid.innerHTML = "";
+  logPane.style.display = "none";
+  iconGrid.style.display = "grid";
+
+  for (const t of selectedTargets) {
+    const item = document.createElement("div");
+    item.className = "icon-item readonly";
+    item.title = t.blurb;
+
+    const img = document.createElement("img");
+    img.className = "glyph";
+    img.src = FOLDER_ICON_SVG;
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "label";
+    labelEl.textContent = t.label;
+
+    item.append(img, labelEl);
+    iconGrid.appendChild(item);
+  }
+  deleteBtn.disabled = true;
+}
+
 async function loadTargets() {
   await TargetPicker.ensureLoaded();
-  const targetIds = TargetPicker.getSelectedIds();
-  setStatusText(`${targetIds.length} target(s) selected — click "Select Targets…" to change`);
-  showLog(`${targetIds.length} target(s) currently selected for scanning.\nClick "Select Targets…" to review or change.`);
+  renderIdleTargetSummary();
 }
 
 async function startScan() {
@@ -322,4 +359,5 @@ listen("scan://done", (event) => {
 scanBtn.addEventListener("click", startScan);
 cancelBtn.addEventListener("click", cancelScan);
 deleteBtn.addEventListener("click", deleteSelected);
+TargetPicker.onChange(renderIdleTargetSummary);
 loadTargets();
