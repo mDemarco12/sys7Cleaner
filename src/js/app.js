@@ -11,8 +11,12 @@ const logPane = document.getElementById("log-pane");
 
 let currentScanId = null;
 let lastSummary = null;
-// When set, we're drilled into one folder: { targetId, targetLabel, path, label }.
+// When set, we're drilled into one folder: { targetId, targetLabel, path,
+// label, fullEntries, page }. fullEntries/page are only populated once the
+// user clicks "Show all files…" on a truncated folder (see showFullFolderList).
 let drilldown = null;
+
+const FOLDER_PAGE_SIZE = 500;
 
 // Mirrors sweep_core::human_bytes exactly (B/KB/MB/GB/TB/PB, one decimal).
 function humanBytes(n) {
@@ -81,14 +85,22 @@ function deniedBanner(summary) {
   return banner;
 }
 
-function truncatedNotice() {
-  const notice = document.createElement("div");
-  notice.style.gridColumn = "1 / -1";
-  notice.style.fontSize = "11px";
-  notice.style.padding = "4px";
-  notice.style.color = "#555";
-  notice.textContent = "Not every file could be listed here — this folder is very large.";
-  return notice;
+// `targetId` is threaded through separately rather than read off `entry`
+// because `Entry` (from the Rust side) carries no target_id of its own.
+function makeEntryItem(entry, targetId) {
+  return makeIconItem({
+    iconSrc: iconForPath(entry.path),
+    label: basename(entry.path),
+    sizeText: humanBytes(entry.disk_bytes),
+    path: entry.path,
+    planData: {
+      target_id: targetId,
+      path: entry.path,
+      expected_disk_bytes: entry.disk_bytes,
+      expected_dev: entry.dev,
+      expected_ino: entry.ino,
+    },
+  });
 }
 
 // Top level: one icon per deletable unit (a whole cache/DerivedData folder,
@@ -137,8 +149,9 @@ function renderFolderLevel(summary) {
 // Drill-down: show the individual files inside one selected folder. Filtered
 // from the owning target's capped top-N `entries` list by path prefix — on a
 // very large folder this may not include every file (the entries cap is
-// shared across the whole target, not per-folder), so we say so rather than
-// silently showing an incomplete list as if it were complete.
+// shared across the whole target, not per-folder). When that happens,
+// showFullFolderList/renderFullFolderList below fetch and paginate the
+// complete, folder-scoped list on demand instead.
 function openFolder(folder) {
   const target = lastSummary.results.find((t) => t.id === folder.target_id);
   if (!target) return;
@@ -172,7 +185,32 @@ function openFolder(folder) {
   header.append(backBtn, crumb);
   iconGrid.appendChild(header);
 
-  if (target.truncated) iconGrid.appendChild(truncatedNotice());
+  // Whole-target truncation (target.truncated) over-fires here: it flags
+  // every folder in a target the moment ANY folder in it lost entries to
+  // the shared cap. file_count is uncapped and per-folder, so this only
+  // triggers for folders that actually have undisplayed files.
+  const folderTruncated = folder.file_count > files.length;
+  if (folderTruncated) {
+    const notice = document.createElement("div");
+    notice.style.gridColumn = "1 / -1";
+    notice.style.display = "flex";
+    notice.style.alignItems = "center";
+    notice.style.gap = "8px";
+    notice.style.fontSize = "11px";
+    notice.style.color = "#555";
+    notice.style.padding = "4px";
+
+    const text = document.createElement("span");
+    text.textContent = "Not every file could be listed here — this folder is very large.";
+
+    const showAllBtn = document.createElement("button");
+    showAllBtn.className = "sys7-btn";
+    showAllBtn.textContent = `Show all ${folder.file_count} files…`;
+    showAllBtn.addEventListener("click", () => showFullFolderList(folder, showAllBtn));
+
+    notice.append(text, showAllBtn);
+    iconGrid.appendChild(notice);
+  }
 
   if (files.length === 0) {
     const empty = document.createElement("div");
@@ -186,20 +224,96 @@ function openFolder(folder) {
   }
 
   for (const entry of files) {
-    const item = makeIconItem({
-      iconSrc: iconForPath(entry.path),
-      label: basename(entry.path),
-      sizeText: humanBytes(entry.disk_bytes),
-      path: entry.path,
-      planData: {
-        target_id: folder.target_id,
-        path: entry.path,
-        expected_disk_bytes: entry.disk_bytes,
-        expected_dev: entry.dev,
-        expected_ino: entry.ino,
-      },
-    });
-    iconGrid.appendChild(item);
+    iconGrid.appendChild(makeEntryItem(entry, folder.target_id));
+  }
+  updateDeleteButtonState();
+}
+
+// Fetches the full, accurate (not target-wide-capped) file list for one
+// folder on demand, then hands off to renderFullFolderList for paginated
+// display. Only triggered by the "Show all…" button on a truncated folder,
+// so folders that already show everything never pay this IPC round-trip.
+async function showFullFolderList(folder, triggerBtn) {
+  triggerBtn.disabled = true;
+  triggerBtn.textContent = "Loading…";
+  try {
+    const entries = await invoke("list_folder_entries", { path: folder.path });
+    entries.sort((a, b) => b.disk_bytes - a.disk_bytes);
+    drilldown.fullEntries = entries;
+    drilldown.page = 1;
+    renderFullFolderList(folder);
+  } catch (err) {
+    triggerBtn.disabled = false;
+    triggerBtn.textContent = `Show all ${folder.file_count} files…`;
+    alert(`Couldn't list that folder: ${err}`);
+  }
+}
+
+// Paginated (FOLDER_PAGE_SIZE per page) view over drilldown.fullEntries,
+// replacing the prefix-filtered partial list once the user has asked to see
+// everything in a truncated folder.
+function renderFullFolderList(folder) {
+  const { fullEntries } = drilldown;
+  const totalPages = Math.max(1, Math.ceil(fullEntries.length / FOLDER_PAGE_SIZE));
+  const page = Math.min(Math.max(drilldown.page, 1), totalPages);
+  drilldown.page = page;
+
+  iconGrid.innerHTML = "";
+
+  const header = document.createElement("div");
+  header.style.gridColumn = "1 / -1";
+  header.style.display = "flex";
+  header.style.alignItems = "center";
+  header.style.gap = "8px";
+  header.style.padding = "2px 0 6px";
+
+  const backBtn = document.createElement("button");
+  backBtn.className = "sys7-btn";
+  backBtn.textContent = "‹ Back";
+  backBtn.addEventListener("click", closeFolder);
+
+  const crumb = document.createElement("span");
+  crumb.style.fontSize = "11px";
+  crumb.textContent = folder.target_label === folder.label ? folder.label : `${folder.target_label} › ${folder.label}`;
+
+  header.append(backBtn, crumb);
+  iconGrid.appendChild(header);
+
+  const pager = document.createElement("div");
+  pager.style.gridColumn = "1 / -1";
+  pager.style.display = "flex";
+  pager.style.alignItems = "center";
+  pager.style.gap = "8px";
+  pager.style.padding = "0 0 6px";
+
+  const prevBtn = document.createElement("button");
+  prevBtn.className = "sys7-btn";
+  prevBtn.textContent = "‹ Prev";
+  prevBtn.disabled = page <= 1;
+  prevBtn.addEventListener("click", () => {
+    drilldown.page = page - 1;
+    renderFullFolderList(folder);
+  });
+
+  const pageLabel = document.createElement("span");
+  pageLabel.style.fontSize = "11px";
+  pageLabel.textContent = `Page ${page} of ${totalPages}    (${fullEntries.length} files)`;
+
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "sys7-btn";
+  nextBtn.textContent = "Next ›";
+  nextBtn.disabled = page >= totalPages;
+  nextBtn.addEventListener("click", () => {
+    drilldown.page = page + 1;
+    renderFullFolderList(folder);
+  });
+
+  pager.append(prevBtn, pageLabel, nextBtn);
+  iconGrid.appendChild(pager);
+
+  const start = (page - 1) * FOLDER_PAGE_SIZE;
+  for (const entry of fullEntries.slice(start, start + FOLDER_PAGE_SIZE)) {
+    iconGrid.appendChild(makeEntryItem(entry, folder.target_id));
   }
   updateDeleteButtonState();
 }
@@ -360,4 +474,9 @@ scanBtn.addEventListener("click", startScan);
 cancelBtn.addEventListener("click", cancelScan);
 deleteBtn.addEventListener("click", deleteSelected);
 TargetPicker.onChange(renderIdleTargetSummary);
+TargetPicker.onOpen(() => {
+  lastSummary = null;
+  drilldown = null;
+  renderIdleTargetSummary();
+});
 loadTargets();

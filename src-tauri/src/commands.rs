@@ -185,6 +185,34 @@ pub fn cancel_scan(registry: State<'_, ScanRegistry>, scan_id: String) {
     }
 }
 
+/// On-demand full listing of one folder's files, for the "show all N files"
+/// drill-down action when a folder has more files than the scan's per-target
+/// entry cap kept. Read-only, but still scoped to a known scan target's
+/// root (canonicalized, `starts_with` check) rather than an arbitrary path,
+/// so this can't become a way for the frontend to enumerate any folder on
+/// disk — same trust boundary the existing drill-down already relies on,
+/// just without `allowlist_map`'s `refuse_delete` filtering, since Tier C
+/// targets are already informationally browsable today, just not deletable.
+#[tauri::command]
+pub fn list_folder_entries(
+    custom: State<'_, CustomTargets>,
+    path: String,
+) -> Result<Vec<sweep_core::model::Entry>, String> {
+    let candidate = PathBuf::from(&path);
+    let canonical = candidate.canonicalize().map_err(|e| format!("can't access '{path}': {e}"))?;
+
+    let known_roots = all_targets(&custom);
+    let in_scope = known_roots.iter().any(|t| {
+        t.roots.iter().any(|r| r.canonicalize().map(|cr| canonical.starts_with(&cr)).unwrap_or(false))
+    });
+    if !in_scope {
+        return Err(format!("'{path}' is not inside a known scan target"));
+    }
+
+    let cancel = AtomicBool::new(false);
+    Ok(sweep_core::walk::list_folder(&canonical, &cancel))
+}
+
 /// Executes a reclaim plan built by the frontend from the user's current
 /// selection. This is the only path that actually deletes anything — the
 /// plan is re-validated here from scratch (allowlist membership per target,

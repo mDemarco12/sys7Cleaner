@@ -17,6 +17,7 @@ pub fn run() {
             commands::start_scan,
             commands::cancel_scan,
             commands::execute_reclaim,
+            commands::list_folder_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

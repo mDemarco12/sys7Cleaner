@@ -23,6 +23,7 @@ const TargetPicker = (() => {
   let selected = new Set();
   let loaded = false;
   let onChangeCallback = null;
+  let onOpenCallback = null;
 
   function notifyChange() {
     if (onChangeCallback) onChangeCallback();
@@ -108,6 +109,7 @@ const TargetPicker = (() => {
   }
 
   function open_() {
+    if (onOpenCallback) onOpenCallback();
     load(false).then(() => {
       modal.style.display = "flex";
     });
@@ -134,6 +136,9 @@ const TargetPicker = (() => {
     ensureLoaded: () => load(false),
     onChange: (cb) => {
       onChangeCallback = cb;
+    },
+    onOpen: (cb) => {
+      onOpenCallback = cb;
     },
   };
 })();

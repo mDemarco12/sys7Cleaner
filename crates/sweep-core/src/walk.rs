@@ -165,6 +165,18 @@ pub fn size_tree(root: &Path, cancel: &AtomicBool, limits: &WalkLimits) -> WalkO
     }
 }
 
+/// Full (not target-wide-capped) listing of every file under one folder,
+/// sorted descending by size. For on-demand "show everything in this
+/// specific folder" browsing, as opposed to `size_tree`'s `top_entries`,
+/// which are the largest entries across an entire scan target and so can
+/// under-represent any one folder within it. `entry_cap` here is a generous
+/// safety ceiling against pathological trees, not a meaningful UI limit —
+/// pagination of the result is the caller's job.
+pub fn list_folder(root: &Path, cancel: &AtomicBool) -> Vec<Entry> {
+    let limits = WalkLimits { entry_cap: 50_000 };
+    size_tree(root, cancel, &limits).top_entries
+}
+
 /// True available bytes on the volume containing `path`, via `statfs`
 /// (`f_bavail * f_bsize`). macOS's Finder "Available" figure includes
 /// purgeable space, which `statvfs`/naive free-space reads won't reconcile
