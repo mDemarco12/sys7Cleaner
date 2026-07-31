@@ -1,7 +1,7 @@
 use crate::model::{FolderSummary, Granularity, ScanTarget};
-use crate::walk::{self, WalkLimits};
+use crate::walk::{self, WalkLimits, WalkProgress};
 use std::os::unix::fs::MetadataExt;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Breaks a target down into its deletable units, per its `Granularity`:
 ///
@@ -18,8 +18,27 @@ use std::sync::atomic::AtomicBool;
 /// (what the results browser groups by) and to build `PlanItem`s for deletion,
 /// so the two can never drift apart.
 pub fn folder_breakdown(target: &ScanTarget, cancel: &AtomicBool) -> Vec<FolderSummary> {
+    folder_breakdown_with_progress(target, cancel, None)
+}
+
+/// As [`folder_breakdown`], but bumps `progress.folders` once per deletable
+/// unit resolved, so a UI can show movement during this pass too.
+///
+/// Only the `folders` counter is touched: the sizing walks this performs
+/// re-visit files the caller's earlier `size_tree` pass already counted, so
+/// feeding them into `files`/`bytes` would double-count them.
+pub fn folder_breakdown_with_progress(
+    target: &ScanTarget,
+    cancel: &AtomicBool,
+    progress: Option<&WalkProgress>,
+) -> Vec<FolderSummary> {
     let limits = WalkLimits::default();
     let mut out = Vec::new();
+    let bump = || {
+        if let Some(p) = progress {
+            p.folders.fetch_add(1, Ordering::Relaxed);
+        }
+    };
 
     match target.granularity {
         Granularity::WholeRoot => {
@@ -35,6 +54,7 @@ pub fn folder_breakdown(target: &ScanTarget, cancel: &AtomicBool) -> Vec<FolderS
                     dev: meta.dev(),
                     ino: meta.ino(),
                 });
+                bump();
             }
         }
         Granularity::Children => {
@@ -56,6 +76,7 @@ pub fn folder_breakdown(target: &ScanTarget, cancel: &AtomicBool) -> Vec<FolderS
                             dev: meta.dev(),
                             ino: meta.ino(),
                         });
+                        bump();
                     } else {
                         out.push(FolderSummary {
                             path,
@@ -66,6 +87,7 @@ pub fn folder_breakdown(target: &ScanTarget, cancel: &AtomicBool) -> Vec<FolderS
                             dev: meta.dev(),
                             ino: meta.ino(),
                         });
+                        bump();
                     }
                 }
             }

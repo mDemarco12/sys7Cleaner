@@ -27,6 +27,24 @@ The release build produces `src-tauri/target/release/bundle/macos/sys7 Cleaner.a
 cp -R "target/release/bundle/macos/sys7 Cleaner.app" /Applications/
 ```
 
+### DEV and PROD flavors
+
+`src-tauri/tauri.dev.conf.json` overrides the product name and bundle identifier so a development build can be installed **alongside** the stable one instead of replacing it:
+
+```bash
+cargo tauri build                                            # PROD → "sys7 Cleaner.app"
+cargo tauri build --config src-tauri/tauri.dev.conf.json     # DEV  → "sys7 Cleaner DEV.app"
+```
+
+(`--config` resolves relative to the current directory, not `src-tauri/` — run both from the repo root.)
+
+Both land in `target/release/bundle/macos/` under different names and can coexist in `/Applications`.
+
+Two things worth knowing:
+
+- **This splits the installed apps, not the source.** Both flavors build from the same working tree, so "PROD" is simply whatever you last built with the default config — promoting DEV to PROD is just a rebuild. Isolating unfinished work needs a git branch, not this.
+- **DEV needs its own Full Disk Access grant.** The distinct `identifier` (`com.mdemarco12.sys7cleaner.dev`) is what stops macOS treating the two builds as the same app — which also means TCC grants don't carry over, and you'll approve DEV separately in System Settings. Reusing the PROD identifier would let a DEV build inherit and disturb PROD's grant, which is exactly what this avoids.
+
 ## Code signing (self-signed, local-only)
 
 The app is signed with a **free self-signed certificate** rather than a paid Apple Developer ID. This is enough to:

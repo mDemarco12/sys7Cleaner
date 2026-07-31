@@ -36,7 +36,7 @@ The IPC layer. Thin — business logic belongs in `sweep-core`, not here.
 | File | Owns |
 |---|---|
 | `commands.rs` | `list_targets`, `add_custom_target`/`remove_custom_target` (custom folders live in `CustomTargets` managed state, separate from the static catalog — merged via `all_targets()`), `start_scan` (spawns a dedicated `std::thread`, never the async runtime — this is CPU/syscall-bound work), `cancel_scan`, `execute_reclaim` (forces `plan.permanent = false` unconditionally — **this app never wires up permanent delete from the UI**, regardless of what a plan claims). |
-| `progress.rs` | `ScanProgress` (atomic counters) + `spawn_coalescer()` — emits `scan://progress` at ≤20/sec (50ms tick), never one event per file. **Note:** progress numbers are currently synthetic/simulated (ramps over ~1s); only `scan://done`'s `ScanSummary` payload is real. Wiring real per-directory progress into `walk.rs` is still open. |
+| `progress.rs` | `ScanProgress` (a `sweep_core::walk::WalkProgress` + a `done` flag) + `spawn_coalescer()` — emits `scan://progress` at ≤20/sec (50ms tick), never one event per file. Numbers are **real**: the engine bumps `WalkProgress`'s atomics during the walk and the coalescer samples them. The event carries `files_seen`/`bytes_seen`/`folders_seen`/`phase`. **Gotcha:** the coalescer emits one final tick *after* `done` is set, so it can land after `scan://done` — the frontend's `scanActive` flag exists to stop that stale tick overwriting the results summary. |
 | `lib.rs` | Registers plugins (`tauri-plugin-dialog` for folder picking, `tauri-plugin-opener` for external links) and all commands. |
 | `capabilities/default.json` | ACL grants for window controls (close/minimize/toggle-maximize — required since `decorations:false` means the hand-drawn title bar owns these), dialog, opener, event. **Custom `#[tauri::command]` functions are NOT gated by this file** — only built-in Tauri/plugin commands are. |
 | `tauri.conf.json` | `frontendDist: "../src"`, no `beforeDevCommand`/Node. `bundle.macOS.signingIdentity: "sys7 Cleaner Dev"` (self-signed, local-only — see README's Code Signing section). Window `title` and `decorations:false`. |
@@ -66,6 +66,7 @@ The IPC layer. Thin — business logic belongs in `sweep-core`, not here.
 
 ## Where things are NOT yet built (don't assume otherwise)
 
-- Real per-directory scan progress (currently synthetic ticks — see System 3).
 - Large-files explorer / `node_modules` finder panels (catalog has no `Granularity::Files` targets yet).
+- A Trash browser (viewing/permanently deleting `~/.Trash` contents from the app). Deliberately not built — it would be the first permanent-deletion path in the UI.
+- Single-pass scanning. `run_scan` walks every target tree **twice**: once via `walk::size_tree` for sizes/entries, then again inside `planning::folder_breakdown` for the deletable-unit breakdown. Collapsing these would roughly halve scan time, but `size_tree`'s hardlink dedup is per-call, so summing per-folder walks would double-count hardlinks that span sibling folders. This is also why progress reports `files`/`bytes` only from the first pass and a separate `folders` counter from the second.
 - Notarization (needs a paid Developer ID — self-signed cert only covers local stability).

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "sys7 Cleaner DEV",
+  "identifier": "com.mdemarco12.sys7cleaner.dev",
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "sys7 HD Cleanup Utility (DEV)",
+        "width": 640,
+        "height": 480,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

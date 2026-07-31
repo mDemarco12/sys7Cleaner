@@ -3,8 +3,30 @@ use jwalk::WalkDir;
 use std::collections::HashSet;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
+
+/// Phase values for `WalkProgress::phase`.
+pub const PHASE_SCANNING: u8 = 0;
+pub const PHASE_ANALYZING: u8 = 1;
+
+/// Live counters a long-running scan bumps as it goes, so a UI layer can
+/// report real progress instead of a simulated ramp. Deliberately plain
+/// atomics with no Tauri/event knowledge — `sweep-core` stays dependency-free
+/// and the consumer decides how (and how often) to sample these.
+///
+/// `files`/`bytes` are only bumped by the sizing walk; `folders` only by the
+/// folder-breakdown pass. They are kept separate because `run_scan` walks
+/// every tree twice (once to size it, once to break it into deletable units),
+/// so summing both passes into one counter would report roughly double the
+/// true file count.
+#[derive(Default)]
+pub struct WalkProgress {
+    pub files: AtomicU64,
+    pub bytes: AtomicU64,
+    pub folders: AtomicU64,
+    pub phase: AtomicU8,
+}
 
 pub struct WalkOutcome {
     pub apparent_bytes: u64,
@@ -38,6 +60,19 @@ impl Default for WalkLimits {
 ///     /Volumes, network mounts, or a Time Machine APFS snapshot)
 ///   - every PermissionDenied is collected into `denied`, never swallowed
 pub fn size_tree(root: &Path, cancel: &AtomicBool, limits: &WalkLimits) -> WalkOutcome {
+    size_tree_with_progress(root, cancel, limits, None)
+}
+
+/// As [`size_tree`], but bumps `progress`'s `files`/`bytes` counters as it
+/// walks so a caller can render live progress. Split out rather than folded
+/// into `size_tree`'s signature so existing callers (the CLI, tests,
+/// `list_folder`) stay untouched.
+pub fn size_tree_with_progress(
+    root: &Path,
+    cancel: &AtomicBool,
+    limits: &WalkLimits,
+    progress: Option<&WalkProgress>,
+) -> WalkOutcome {
     if !root.exists() {
         return WalkOutcome {
             apparent_bytes: 0,
@@ -131,6 +166,11 @@ pub fn size_tree(root: &Path, cancel: &AtomicBool, limits: &WalkLimits) -> WalkO
         apparent.fetch_add(this_apparent, Ordering::Relaxed);
         disk.fetch_add(this_disk, Ordering::Relaxed);
         files.fetch_add(1, Ordering::Relaxed);
+
+        if let Some(p) = progress {
+            p.files.fetch_add(1, Ordering::Relaxed);
+            p.bytes.fetch_add(this_disk, Ordering::Relaxed);
+        }
 
         let modified = meta.modified().ok();
         let entry_rec = Entry {
@@ -251,6 +291,37 @@ mod tests {
         let outcome = size_tree(Path::new("/definitely/does/not/exist"), &cancel, &WalkLimits::default());
         assert_eq!(outcome.file_count, 0);
         assert_eq!(outcome.disk_bytes, 0);
+    }
+
+    #[test]
+    fn progress_counters_track_the_real_walk() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("a")).unwrap();
+        fs::write(dir.path().join("a/one.bin"), vec![0u8; 4096]).unwrap();
+        fs::write(dir.path().join("two.bin"), vec![0u8; 8192]).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let progress = WalkProgress::default();
+        let outcome = size_tree_with_progress(dir.path(), &cancel, &WalkLimits::default(), Some(&progress));
+
+        // The whole point of the sink: what it reports must equal what the
+        // walk actually found, not an independently-derived approximation.
+        assert_eq!(progress.files.load(Ordering::Relaxed), outcome.file_count);
+        assert_eq!(progress.bytes.load(Ordering::Relaxed), outcome.disk_bytes);
+        assert_eq!(progress.files.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn size_tree_without_progress_still_walks_identically() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("one.bin"), vec![0u8; 4096]).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let with_none = size_tree_with_progress(dir.path(), &cancel, &WalkLimits::default(), None);
+        let plain = size_tree(dir.path(), &cancel, &WalkLimits::default());
+
+        assert_eq!(plain.file_count, with_none.file_count);
+        assert_eq!(plain.disk_bytes, with_none.disk_bytes);
     }
 
     #[test]

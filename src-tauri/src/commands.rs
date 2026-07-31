@@ -131,13 +131,9 @@ pub fn remove_custom_target(custom: State<'_, CustomTargets>, id: String) {
 /// runs on a dedicated `std::thread`, never on the async runtime, since this
 /// is CPU/syscall-bound work rather than async I/O.
 ///
-/// NOTE (M2 scope): the intermediate `scan://progress` ticks emitted here are
-/// synthetic — they exercise the exact same throttled-coalescer pipeline
-/// that will carry real per-directory counts once `sweep_core::walk` is
-/// instrumented with shared atomics in M4. The final `scan://done` payload,
-/// by contrast, is already a genuine `ScanSummary` from `sweep_core::run_scan`
-/// against the real catalog — only the "in progress" numbers are fake, not
-/// the destination or the result.
+/// Progress is real: the engine bumps the shared `WalkProgress` atomics as it
+/// walks, and the coalescer samples them on its own tick, so `scan://progress`
+/// reflects genuine per-file counts rather than a simulated ramp.
 #[tauri::command]
 pub async fn start_scan(
     app: AppHandle,
@@ -157,19 +153,7 @@ pub async fn start_scan(
     let scan_id_for_thread = scan_id.clone();
 
     std::thread::spawn(move || {
-        // Synthetic progress: ramps up over ~1s so the UI can prove it
-        // receives and renders live ticks, independent of how fast the
-        // real scan underneath happens to finish.
-        for step in 1..=20u64 {
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
-            progress.files_seen.store(step * 137, Ordering::Relaxed);
-            progress.bytes_seen.store(step * 4_194_304, Ordering::Relaxed);
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-
-        let summary = sweep_core::run_scan(&chosen, &cancel);
+        let summary = sweep_core::run_scan_with_progress(&chosen, &cancel, Some(&progress.walk));
         progress.done.store(true, Ordering::Relaxed);
 
         let _ = app.emit("scan://done", DoneEvent { scan_id: scan_id_for_thread, summary });

@@ -10,6 +10,11 @@ const iconGrid = document.getElementById("icon-grid");
 const logPane = document.getElementById("log-pane");
 
 let currentScanId = null;
+// True from the moment a scan is requested until scan://done lands. The
+// coalescer emits one last tick AFTER setting `done`, so that tick can arrive
+// up to one interval after scan://done was handled — without this guard it
+// overwrites the results summary with a stale "Scanning…" line.
+let scanActive = false;
 let lastSummary = null;
 // When set, we're drilled into one folder: { targetId, targetLabel, path,
 // label, fullEntries, page }. fullEntries/page are only populated once the
@@ -17,6 +22,10 @@ let lastSummary = null;
 let drilldown = null;
 
 const FOLDER_PAGE_SIZE = 500;
+
+// Mirrors sweep_core::walk::PHASE_ANALYZING — the second pass, where each
+// target is broken into deletable units rather than being sized.
+const PHASE_ANALYZING = 1;
 
 // Mirrors sweep_core::human_bytes exactly (B/KB/MB/GB/TB/PB, one decimal).
 function humanBytes(n) {
@@ -183,7 +192,6 @@ function openFolder(folder) {
   crumb.textContent = folder.target_label === folder.label ? folder.label : `${folder.target_label} › ${folder.label}`;
 
   header.append(backBtn, crumb);
-  iconGrid.appendChild(header);
 
   // Whole-target truncation (target.truncated) over-fires here: it flags
   // every folder in a target the moment ANY folder in it lost entries to
@@ -191,16 +199,12 @@ function openFolder(folder) {
   // triggers for folders that actually have undisplayed files.
   const folderTruncated = folder.file_count > files.length;
   if (folderTruncated) {
-    const notice = document.createElement("div");
-    notice.style.gridColumn = "1 / -1";
-    notice.style.display = "flex";
-    notice.style.alignItems = "center";
-    notice.style.gap = "8px";
-    notice.style.fontSize = "11px";
-    notice.style.color = "#555";
-    notice.style.padding = "4px";
+    const spacer = document.createElement("div");
+    spacer.style.flex = "1 1 auto";
 
     const text = document.createElement("span");
+    text.style.fontSize = "11px";
+    text.style.color = "#555";
     text.textContent = "Not every file could be listed here — this folder is very large.";
 
     const showAllBtn = document.createElement("button");
@@ -208,9 +212,10 @@ function openFolder(folder) {
     showAllBtn.textContent = `Show all ${folder.file_count} files…`;
     showAllBtn.addEventListener("click", () => showFullFolderList(folder, showAllBtn));
 
-    notice.append(text, showAllBtn);
-    iconGrid.appendChild(notice);
+    header.append(spacer, text, showAllBtn);
   }
+
+  iconGrid.appendChild(header);
 
   if (files.length === 0) {
     const empty = document.createElement("div");
@@ -387,6 +392,10 @@ async function startScan() {
     return;
   }
 
+  // Set synchronously, before awaiting: the scan thread and its coalescer
+  // start emitting as soon as the command is dispatched, so deferring this
+  // until the invoke resolves would drop the first ticks.
+  scanActive = true;
   scanBtn.disabled = true;
   cancelBtn.disabled = false;
   setScanningIndicator(true);
@@ -459,11 +468,18 @@ async function deleteSelected() {
 }
 
 listen("scan://progress", (event) => {
-  const { files_seen, bytes_seen } = event.payload;
-  setStatusText(`Scanning...    ${files_seen} files, ${humanBytes(bytes_seen)} seen`);
+  if (!scanActive) return;
+  const { files_seen, bytes_seen, folders_seen, phase } = event.payload;
+  const parts = [`${files_seen.toLocaleString()} files`, `${humanBytes(bytes_seen)} seen`];
+  // During the breakdown pass the file/byte counters intentionally hold still
+  // (re-walking the same trees would double-count them), so show the folder
+  // counter instead — otherwise this looks frozen.
+  if (phase === PHASE_ANALYZING) parts.push(`analyzing ${folders_seen.toLocaleString()} folders`);
+  setStatusText(`Scanning...    ${parts.join(", ")}`);
 });
 
 listen("scan://done", (event) => {
+  scanActive = false;
   scanBtn.disabled = false;
   cancelBtn.disabled = true;
   setScanningIndicator(false);

@@ -32,18 +32,38 @@ pub fn human_bytes(n: u64) -> String {
 /// a real `AtomicBool` for cancellation and a throttled progress emitter —
 /// this function itself has no knowledge of Tauri, threads, or events.
 pub fn run_scan(targets: &[ScanTarget], cancel: &AtomicBool) -> ScanSummary {
+    run_scan_with_progress(targets, cancel, None)
+}
+
+/// As [`run_scan`], but reports live counters into `progress` so a UI layer
+/// can render real scan progress. Each target is processed in two phases —
+/// `PHASE_SCANNING` while its trees are sized, then `PHASE_ANALYZING` while
+/// it's broken into deletable units — and `phase` is updated accordingly so
+/// the consumer can label what's happening rather than showing a counter
+/// that appears to stall during the second pass.
+pub fn run_scan_with_progress(
+    targets: &[ScanTarget],
+    cancel: &AtomicBool,
+    progress: Option<&walk::WalkProgress>,
+) -> ScanSummary {
+    use std::sync::atomic::Ordering;
+
     let limits = walk::WalkLimits::default();
     let mut results = Vec::new();
     let mut total = 0u64;
 
     for target in targets {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if cancel.load(Ordering::Relaxed) {
             break;
+        }
+
+        if let Some(p) = progress {
+            p.phase.store(walk::PHASE_SCANNING, Ordering::Relaxed);
         }
 
         let mut combined = TargetResult::empty(target.id, target.label, target.refuse_delete);
         for root in &target.roots {
-            let outcome = walk::size_tree(root, cancel, &limits);
+            let outcome = walk::size_tree_with_progress(root, cancel, &limits, progress);
             combined.apparent_bytes += outcome.apparent_bytes;
             combined.disk_bytes += outcome.disk_bytes;
             combined.file_count += outcome.file_count;
@@ -54,7 +74,11 @@ pub fn run_scan(targets: &[ScanTarget], cancel: &AtomicBool) -> ScanSummary {
         combined.entries.sort_by(|a, b| b.disk_bytes.cmp(&a.disk_bytes));
         combined.entries.truncate(limits.entry_cap);
 
-        combined.folders = planning::folder_breakdown(target, cancel);
+        if let Some(p) = progress {
+            p.phase.store(walk::PHASE_ANALYZING, Ordering::Relaxed);
+        }
+
+        combined.folders = planning::folder_breakdown_with_progress(target, cancel, progress);
         combined.folders.sort_by(|a, b| b.disk_bytes.cmp(&a.disk_bytes));
 
         total += combined.disk_bytes;
