@@ -3,6 +3,12 @@
   const aboutBtn = document.getElementById("about-btn");
   const doneBtn = document.getElementById("about-done-btn");
 
+  makeWindowDraggable(
+    modal.querySelector(".modal-window"),
+    modal.querySelectorAll(".title-stripes"),
+    document.querySelector(".mac-window")
+  );
+
   aboutBtn.addEventListener("click", () => {
     modal.style.display = "flex";
   });

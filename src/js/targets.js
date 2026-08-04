@@ -12,6 +12,12 @@ const TargetPicker = (() => {
   const addFolderBtn = document.getElementById("add-folder-btn");
   const deselectAllBtn = document.getElementById("deselect-all-btn");
 
+  makeWindowDraggable(
+    modal.querySelector(".modal-window"),
+    modal.querySelectorAll(".title-stripes"),
+    document.querySelector(".mac-window")
+  );
+
   const TIER_ORDER = ["Regenerable", "ReviewRequired", "NeverTouch"];
   const TIER_LABEL = {
     Regenerable: "Safe to clean",
