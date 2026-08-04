@@ -13,17 +13,19 @@ use reclaim::TargetAllowlist;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-/// Human-readable byte formatter (B/KB/MB/GB/TB/PB), matching the reference
-/// prototype's `human()` but operating on the correct (disk_bytes) number.
+/// Human-readable byte formatter (B/KB/MB at one decimal, GB/TB/PB at two —
+/// one decimal at GB scale quantises to ~107 MB per step, too coarse for
+/// deciding what's worth deleting), matching the reference prototype's
+/// `human()` but operating on the correct (disk_bytes) number.
 pub fn human_bytes(n: u64) -> String {
     let mut val = n as f64;
-    for unit in ["B", "KB", "MB", "GB", "TB"] {
+    for (unit, decimals) in [("B", 1), ("KB", 1), ("MB", 1), ("GB", 2), ("TB", 2)] {
         if val < 1024.0 {
-            return format!("{val:.1} {unit}");
+            return format!("{val:.decimals$} {unit}");
         }
         val /= 1024.0;
     }
-    format!("{val:.1} PB")
+    format!("{val:.2} PB")
 }
 
 /// Run every target in `targets` through `walk::size_tree` and assemble a
@@ -136,6 +138,9 @@ mod tests {
         assert_eq!(human_bytes(512), "512.0 B");
         assert_eq!(human_bytes(2048), "2.0 KB");
         assert_eq!(human_bytes(5 * 1024 * 1024), "5.0 MB");
+        // GB and up carry two decimals, not one — one decimal at this scale
+        // would quantise to ~107 MB per step.
+        assert_eq!(human_bytes(3 * 1024 * 1024 * 1024), "3.00 GB");
     }
 
     /// End-to-end proof that a refuse_delete (Tier C) target can never be

@@ -27,14 +27,24 @@ const FOLDER_PAGE_SIZE = 500;
 // target is broken into deletable units rather than being sized.
 const PHASE_ANALYZING = 1;
 
-// Mirrors sweep_core::human_bytes exactly (B/KB/MB/GB/TB/PB, one decimal).
+// Mirrors sweep_core::human_bytes exactly: B/KB/MB at one decimal, GB and up
+// at two — one decimal at GB scale quantises to ~107 MB per step, which is
+// too coarse for deciding what's worth deleting.
+const BYTE_UNITS = [
+  ["B", 1],
+  ["KB", 1],
+  ["MB", 1],
+  ["GB", 2],
+  ["TB", 2],
+];
+
 function humanBytes(n) {
   let val = n;
-  for (const unit of ["B", "KB", "MB", "GB", "TB"]) {
-    if (val < 1024) return `${val.toFixed(1)} ${unit}`;
+  for (const [unit, decimals] of BYTE_UNITS) {
+    if (val < 1024) return `${val.toFixed(decimals)} ${unit}`;
     val /= 1024;
   }
-  return `${val.toFixed(1)} PB`;
+  return `${val.toFixed(2)} PB`;
 }
 
 function basename(path) {
@@ -56,15 +66,19 @@ function updateDeleteButtonState() {
 
 // `planData` is what this icon would become as a PlanItem if deleted:
 // { target_id, path, expected_disk_bytes, expected_dev, expected_ino }.
-function makeIconItem({ iconSrc, label, sizeText, path, onOpen, planData }) {
+// `iconSvg` is inline SVG markup, not a URL — rendered via innerHTML rather
+// than <img src>, since an <img>-loaded SVG is an isolated document that
+// can't inherit `color`, which is what lets these glyphs invert to white on
+// a selected (black-background) cell purely through currentColor.
+function makeIconItem({ iconSvg, label, sizeText, path, onOpen, planData }) {
   const item = document.createElement("div");
   item.className = "icon-item";
   item.title = path;
   item._planData = planData;
 
-  const img = document.createElement("img");
-  img.className = "glyph";
-  img.src = iconSrc;
+  const glyph = document.createElement("span");
+  glyph.className = "glyph";
+  glyph.innerHTML = iconSvg; // markup is always ours (icons.js constants), never user input
 
   const labelEl = document.createElement("div");
   labelEl.className = "label";
@@ -74,7 +88,7 @@ function makeIconItem({ iconSrc, label, sizeText, path, onOpen, planData }) {
   sizeEl.className = "size";
   sizeEl.textContent = sizeText;
 
-  item.append(img, labelEl, sizeEl);
+  item.append(glyph, labelEl, sizeEl);
   item.addEventListener("click", () => {
     item.classList.toggle("selected");
     updateDeleteButtonState();
@@ -98,7 +112,7 @@ function deniedBanner(summary) {
 // because `Entry` (from the Rust side) carries no target_id of its own.
 function makeEntryItem(entry, targetId) {
   return makeIconItem({
-    iconSrc: iconForPath(entry.path),
+    iconSvg: iconForPath(entry.path),
     label: basename(entry.path),
     sizeText: humanBytes(entry.disk_bytes),
     path: entry.path,
@@ -137,7 +151,7 @@ function renderFolderLevel(summary) {
 
   for (const folder of allFolders) {
     const item = makeIconItem({
-      iconSrc: folder.is_dir ? FOLDER_ICON_SVG : DOCUMENT_ICON_SVG,
+      iconSvg: folder.is_dir ? FOLDER_ICON_SVG : fileIconSvg(fileTypeForPath(folder.path)),
       label: folder.label,
       sizeText: humanBytes(folder.disk_bytes),
       path: folder.path,
@@ -366,15 +380,15 @@ function renderIdleTargetSummary() {
     item.className = "icon-item readonly";
     item.title = t.blurb;
 
-    const img = document.createElement("img");
-    img.className = "glyph";
-    img.src = FOLDER_ICON_SVG;
+    const glyph = document.createElement("span");
+    glyph.className = "glyph";
+    glyph.innerHTML = FOLDER_ICON_SVG;
 
     const labelEl = document.createElement("div");
     labelEl.className = "label";
     labelEl.textContent = t.label;
 
-    item.append(img, labelEl);
+    item.append(glyph, labelEl);
     iconGrid.appendChild(item);
   }
   deleteBtn.disabled = true;

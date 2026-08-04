@@ -311,9 +311,19 @@ button.sys7-btn:disabled {
 }
 
 .icon-item .glyph {
+  display: block;
   width: 32px;
   height: 32px;
   image-rendering: pixelated;
+}
+
+/* .glyph is a <span> holding inline SVG markup (see makeIconItem in app.js) —
+   inline rather than an <img>, so the glyph can inherit `color` and invert
+   via currentColor when its .icon-item gets .selected. */
+.icon-item .glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .icon-item .label {
