@@ -1,5 +1,17 @@
 /* System 7 chrome. Strictly 1-bit: pure #000 on pure #d8d8d8/#fff, no gray
-   fills, no shadows, no gradients other than the hard-edged pinstripe. */
+   fills, no shadows, no gradients other than the hard-edged pinstripe.
+   ONE deliberate, bounded exception: the boot splash's CRT-glitch intro
+   (`.splash-logo-ghost`, `.splash-text` aberration, `--ghost-red`/
+   `--ghost-cyan` below) uses colour and stepped motion. It is confined to
+   `#splash`, which is removed from the DOM entirely once boot finishes
+   (`splash.js`) — nothing color/gradient-based leaks into the window chrome
+   the user actually works in. Don't extend colour usage past that overlay. */
+
+:root {
+  --dither-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23000'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23000'/%3E%3C/svg%3E");
+  --ghost-red: #ff0040;
+  --ghost-cyan: #00e5ff;
+}
 
 * {
   box-sizing: border-box;
@@ -27,19 +39,23 @@ html, body {
    image isn't, and `.mac-window`'s white shows through instead of the dither. */
 .dither-bg, body, .splash-overlay {
   background-color: #d8d8d8;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23000'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23000'/%3E%3C/svg%3E");
+  background-image: var(--dither-pattern);
   background-size: 4px 4px;
   image-rendering: pixelated;
 }
 
 /* ---------- Boot sequence ----------
-   Mirrors the real Macintosh startup: a plain gray/dithered screen first
-   (the "Happy Mac" gray-screen moment, before anything has loaded), THEN
-   the "Welcome to Macintosh" box fades in on top of it, THEN it fades out
-   and the desktop builds in piece by piece (title bar, then toolbar, then
-   status bar, then content) rather than appearing all at once. This is a
-   one-time cosmetic sequence on load only — once `.booted` lands on <body>,
-   every element behaves exactly as if none of this ever ran. */
+   A CRT-power-on-flavored intro: plain gray/dithered screen, THEN the
+   Welcome box unfolds from a scanline with a static flash, THEN a brief
+   chromatic-aberration glitch on the emblem and text, THEN the text
+   types itself out with a blinking cursor, THEN one more glitch pulse and
+   a scanline sweep, THEN the whole thing fades and the desktop builds in
+   piece by piece (title bar, then toolbar, then status bar, then content)
+   rather than appearing all at once. Total budget is pinned at ~3.1s by
+   `splash.js`'s TOTAL_MS — this is a utility people open to do one quick
+   task, so boot must never get slower, only better-looking within the same
+   time. One-time cosmetic sequence on load only — once `.booted` lands on
+   <body>, every element behaves exactly as if none of this ever ran. */
 
 .splash-overlay {
   position: fixed;
@@ -68,22 +84,186 @@ html, body {
   display: flex;
   align-items: center;
   gap: 16px;
+  position: relative;
+  transform: scaleY(1);
+  transform-origin: center;
 }
 
 .splash-box.visible {
   opacity: 1;
 }
 
-.splash-logo {
-  display: block;
+/* CRT power-on: the box unfolds from a flat scanline. `power-on` runs the
+   unfold (the one eased, non-stepped motion in this whole sequence — every
+   glitch beat below snaps instead); `power-on-flash` is a single opaque
+   flash of the shared dither pattern layered over the box via ::before,
+   timed to land right as the unfold finishes. */
+.splash-box.power-on {
+  animation: splash-unfold 180ms ease-out both;
+}
+
+.splash-box.power-on::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: #d8d8d8;
+  background-image: var(--dither-pattern);
+  background-size: 4px 4px;
+  image-rendering: pixelated;
+  animation: splash-flash 180ms steps(1, end) both;
+  pointer-events: none;
+}
+
+@keyframes splash-unfold {
+  0% { transform: scaleY(0.03); }
+  70% { transform: scaleY(1.04); }
+  100% { transform: scaleY(1); }
+}
+
+@keyframes splash-flash {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Chromatic-aberration glitch: three flat-colour ghost copies of the emblem
+   (base + red + cyan, see --ghost-red/--ghost-cyan) and a matching red/cyan
+   text-shadow split on the type. `steps(1, end)` on every glitch keyframe is
+   deliberate — these are meant to snap between offsets, not ease through
+   them, or it reads as a smooth wobble instead of a glitch. */
+.splash-logo-stack {
+  position: relative;
   width: 56px;
   height: 56px;
   flex: 0 0 auto;
 }
 
+.splash-logo {
+  display: block;
+  width: 56px;
+  height: 56px;
+}
+
+.splash-logo-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+.splash-box.glitching .splash-logo-ghost.ghost-r {
+  opacity: 0.85;
+  filter: brightness(0) saturate(100%) invert(13%) sepia(94%) saturate(6000%) hue-rotate(340deg);
+  animation: splash-glitch-r 320ms steps(1, end) both;
+}
+
+.splash-box.glitching .splash-logo-ghost.ghost-c {
+  opacity: 0.85;
+  filter: brightness(0) saturate(100%) invert(70%) sepia(90%) saturate(2000%) hue-rotate(150deg);
+  animation: splash-glitch-c 320ms steps(1, end) both;
+}
+
+@keyframes splash-glitch-r {
+  0%, 100% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+  10% { transform: translateX(3px); clip-path: inset(10% 0 60% 0); }
+  25% { transform: translateX(-2px); clip-path: inset(45% 0 15% 0); }
+  40% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+  55% { transform: translateX(4px); clip-path: inset(65% 0 5% 0); }
+  75% { transform: translateX(-3px); clip-path: inset(5% 0 70% 0); }
+  90% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+}
+
+@keyframes splash-glitch-c {
+  0%, 100% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+  15% { transform: translateX(-3px); clip-path: inset(55% 0 10% 0); }
+  30% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+  50% { transform: translateX(-4px); clip-path: inset(15% 0 50% 0); }
+  65% { transform: translateX(2px); clip-path: inset(0 0 80% 0); }
+  85% { transform: translateX(0); clip-path: inset(0 0 0 0); }
+}
+
 .splash-text {
   font-size: 14px;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.splash-box.glitching .splash-text {
+  animation: splash-text-glitch 320ms steps(1, end) both;
+}
+
+@keyframes splash-text-glitch {
+  0%, 100% { text-shadow: none; }
+  20% { text-shadow: 3px 0 var(--ghost-red), -3px 0 var(--ghost-cyan); }
+  45% { text-shadow: none; }
+  60% { text-shadow: -2px 0 var(--ghost-red), 2px 0 var(--ghost-cyan); }
+  80% { text-shadow: none; }
+}
+
+/* Typewriter cursor: a solid 1-bit block, hard on/off blink — no fade,
+   matching the rest of the app's no-transitions-on-glyphs rule. Hidden
+   entirely until splash.js adds `.active` for the typing phase. */
+.splash-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: #000;
+  margin-left: 2px;
+  opacity: 0;
+}
+
+.splash-cursor.active {
+  animation: splash-cursor-blink 1s steps(1, end) infinite;
+}
+
+@keyframes splash-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* One hard-edged (not gradient) band sweeping the full dithered field once,
+   for the CRT-sweep beat. `top` (not `transform: translateY`) is animated
+   deliberately, since translateY on a 2px-tall element would be relative to
+   its own tiny box, not the overlay it needs to sweep across. */
+.splash-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: #000;
+  opacity: 0;
+}
+
+.splash-scanline.sweeping {
+  opacity: 1;
+  animation: splash-scanline-sweep 500ms ease-out both;
+}
+
+@keyframes splash-scanline-sweep {
+  0% { top: 0; opacity: 1; }
+  95% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* Accessibility: every animation above is purely decorative. Reduced-motion
+   users get the plain fade this sequence used to be — full text immediately,
+   no cursor, no glitch, no sweep — rather than a degraded version of it. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-box, .splash-box.power-on, .splash-box.glitching {
+    animation: none;
+  }
+  .splash-box.power-on::before {
+    display: none;
+  }
+  .splash-logo-ghost, .splash-cursor, .splash-scanline {
+    display: none;
+  }
+  .splash-box.glitching .splash-text {
+    animation: none;
+    text-shadow: none;
+  }
 }
 
 /* Window sections start hidden/offset and are revealed one at a time by
