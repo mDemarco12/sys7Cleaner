@@ -622,13 +622,18 @@ button.sys7-btn:disabled {
 
 .about-window {
   width: 360px;
-  height: 260px;
+  height: 300px;
 }
 
 .about-body {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.about-info {
+  align-self: stretch;
 }
 
 .about-sprite {
@@ -638,8 +643,8 @@ button.sys7-btn:disabled {
 
 .about-sprite svg {
   display: block;
-  width: 80px;
-  height: 110px;
+  width: 112px;
+  height: 104px;
   image-rendering: pixelated;
   animation: sprite-bob 2.6s ease-in-out infinite;
 }
@@ -656,18 +661,13 @@ button.sys7-btn:disabled {
   animation: sprite-blink 4.5s steps(1, end) infinite;
 }
 
-/* #241017/#f2c9a1 duplicate sprite/build_sprite.py's PALETTE["E"]/["S"] —
+/* #2a1018/#fbe0cc duplicate sprite/build_sprite.py's PALETTE["E"]/["S"] —
    there's no shared source between the Python generator and this static
    CSS, so a repalette there needs a matching edit here or the blink will
    flash the wrong color. */
 @keyframes sprite-blink {
-  0%, 94%, 100% { fill: #241017; }
-  96%, 98% { fill: #f2c9a1; }
-}
-
-.about-info {
-  flex: 1 1 auto;
-  min-width: 0;
+  0%, 94%, 100% { fill: #2a1018; }
+  96%, 98% { fill: #fbe0cc; }
 }
 
 .about-app-name {
