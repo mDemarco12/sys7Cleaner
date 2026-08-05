@@ -3,6 +3,13 @@
   const aboutBtn = document.getElementById("about-btn");
   const doneBtn = document.getElementById("about-done-btn");
 
+  // Original chibi mascot — one of exactly two documented exceptions to the
+  // app's strict 1-bit rule (see system7.css's header comment). Rendered
+  // once at load, not per-open: it's a static <svg> that idle-bobs/blinks
+  // via CSS the whole time it's in the DOM, whether the modal is visible or
+  // not, so there's nothing to (re)trigger on each open.
+  document.getElementById("about-sprite").innerHTML = SYS7_MASCOT_SVG;
+
   makeWindowDraggable(
     modal.querySelector(".modal-window"),
     modal.querySelectorAll(".title-stripes"),

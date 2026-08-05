@@ -30,17 +30,46 @@
   const HOLD_FLOOR_MS = 300; // minimum pause after typing finishes, before fade-out
   const FADE_MS = 400; // matches .splash-overlay's CSS transition
   const SECTION_STAGGER_MS = 150; // gap between each window section revealing
+  const CHIME_FADE_OUT_MS = 600; // final volume ramp-down at the tail of the boot chime
 
   const splash = document.getElementById("splash");
   const splashBox = splash.querySelector(".splash-box");
   const typeSpan = splash.querySelector(".splash-type");
   const cursor = splash.querySelector(".splash-cursor");
   const scanline = splash.querySelector(".splash-scanline");
+  const chime = document.getElementById("boot-chime");
   const sections = Array.from(document.querySelectorAll(".boot-section"));
 
   splash.querySelectorAll(".splash-logo").forEach((img) => {
     img.src = SYS7_EMBLEM_SVG;
   });
+
+  // Ramps volume to 0 over the chime's last CHIME_FADE_OUT_MS, tied to the
+  // audio element's own playback clock (via chime.currentTime/duration)
+  // rather than a separately scheduled timer — a parallel timer could drift
+  // out of sync with the actual audio; reading the real clock every frame
+  // can't. Self-terminating: once paused/ended, it just stops requesting
+  // the next frame rather than needing an explicit cancel.
+  function tickChimeFade() {
+    const dur = chime.duration;
+    if (chime.paused || chime.ended || !isFinite(dur)) return;
+    const remainingMs = (dur - chime.currentTime) * 1000;
+    if (remainingMs <= CHIME_FADE_OUT_MS) {
+      chime.volume = Math.max(0, Math.min(1, remainingMs / CHIME_FADE_OUT_MS));
+    }
+    requestAnimationFrame(tickChimeFade);
+  }
+
+  // Fired at t=0 rather than gated behind any visual phase, so the chime's
+  // own ~2.9s runtime lands inside TOTAL_MS with headroom instead of
+  // trailing audibly past the point the app becomes interactive. WebKit's
+  // autoplay policy can in principle still block unsolicited audio even for
+  // local bundled content — if that happens, boot just proceeds silently
+  // rather than throwing on an unhandled rejection, and the fade loop below
+  // simply never starts.
+  chime.currentTime = 0;
+  chime.volume = 1;
+  chime.play().then(() => requestAnimationFrame(tickChimeFade)).catch(() => {});
 
   // Toggles `.glitching` on and back off so the CSS animation is free to
   // replay on the next call — re-adding a class that's already present

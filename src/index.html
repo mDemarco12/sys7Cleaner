@@ -17,6 +17,7 @@
     <div class="splash-text"><span class="splash-type">Welcome to sys7 Cleaner</span><span class="splash-cursor" aria-hidden="true"></span></div>
   </div>
   <div class="splash-scanline" aria-hidden="true"></div>
+  <audio id="boot-chime" preload="auto" src="audio/boot-neonrain.wav"></audio>
 </div>
 
 <div class="mac-window">
@@ -90,12 +91,15 @@
       <div class="title-text">About</div>
       <div class="title-stripes"></div>
     </div>
-    <div class="modal-body">
-      <div class="about-app-name">sys7 Cleaner</div>
-      <table class="about-table">
-        <tr><td>GitHub</td><td><a href="https://github.com/mDemarco12" target="_blank" rel="noopener">github.com/mDemarco12</a></td></tr>
-        <tr><td>Email</td><td>michael.adams02@outlook.com</td></tr>
-      </table>
+    <div class="modal-body about-body">
+      <div id="about-sprite" class="about-sprite" aria-hidden="true"></div>
+      <div class="about-info">
+        <div class="about-app-name">sys7 Cleaner</div>
+        <table class="about-table">
+          <tr><td>GitHub</td><td><a href="https://github.com/mDemarco12" target="_blank" rel="noopener">github.com/mDemarco12</a></td></tr>
+          <tr><td>Email</td><td>michael.adams02@outlook.com</td></tr>
+        </table>
+      </div>
     </div>
     <div class="modal-footer">
       <div style="flex:1 1 auto"></div>
@@ -106,6 +110,7 @@
 
 <script src="js/file-types.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/sprite.js"></script>
 <script src="js/splash.js"></script>
 <script src="js/chrome.js"></script>
 <script src="js/window-drag.js"></script>
