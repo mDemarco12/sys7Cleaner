@@ -614,11 +614,7 @@ button.sys7-btn:disabled {
   cursor: pointer;
 }
 
-/* ---------- About modal ----------
-   The mascot below (`.about-sprite`, filled from SYS7_MASCOT_SVG in
-   about.js) is the second and last documented exception to the app's
-   strict 1-bit rule — see the header comment at the top of this file and
-   CLAUDE.md's "De-branding & 1-bit" bullet. Confined to #about-modal. */
+/* ---------- About modal ---------- */
 
 .about-window {
   width: 360px;
@@ -634,40 +630,6 @@ button.sys7-btn:disabled {
 
 .about-info {
   align-self: stretch;
-}
-
-.about-sprite {
-  flex: 0 0 auto;
-  padding-top: 4px;
-}
-
-.about-sprite svg {
-  display: block;
-  width: 112px;
-  height: 104px;
-  image-rendering: pixelated;
-  animation: sprite-bob 2.6s ease-in-out infinite;
-}
-
-@keyframes sprite-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-/* Both eye rects share this animation, so they blink in sync. A hard cut to
-   the skin tone for two keyframe steps near the end of a long, mostly-idle
-   cycle reads as an occasional blink rather than a mechanical flicker. */
-.sprite-eye {
-  animation: sprite-blink 4.5s steps(1, end) infinite;
-}
-
-/* #2a1018/#fbe0cc duplicate sprite/build_sprite.py's PALETTE["E"]/["S"] —
-   there's no shared source between the Python generator and this static
-   CSS, so a repalette there needs a matching edit here or the blink will
-   flash the wrong color. */
-@keyframes sprite-blink {
-  0%, 94%, 100% { fill: #2a1018; }
-  96%, 98% { fill: #fbe0cc; }
 }
 
 .about-app-name {
